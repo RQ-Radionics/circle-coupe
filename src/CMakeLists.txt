@@ -109,7 +109,8 @@ set(SDL3_CORE_SOURCES
     ${SDL3_SRC}/video/SDL_stb.c
     ${SDL3_SRC}/video/SDL_stretch.c
     ${SDL3_SRC}/video/SDL_surface.c
-    ${SDL3_SRC}/video/SDL_video.c
+    # SDL_video.c replaced by patched copy that registers CIRCLE_bootstrap
+    ${CMAKE_SOURCE_DIR}/src/video/SDL_video_circle.c
     ${SDL3_SRC}/video/SDL_video_unsupported.c
     ${SDL3_SRC}/video/SDL_vulkan_utils.c
     ${SDL3_SRC}/video/SDL_yuv.c
@@ -194,6 +195,9 @@ target_include_directories(SDL3-circle
         ${SDL3_SRC}
         ${CMAKE_SOURCE_DIR}/src/include   # SDL_build_config.h
     PRIVATE
+        ${SDL3_SRC}/video                 # SDL_video_circle.c uses relative includes
+        ${SDL3_SRC}/audio                 # for audio backends
+        ${SDL3_SRC}/thread                # for thread headers
         ${CIRCLE_INCLUDE_DIRS}
 )
 
