@@ -117,8 +117,9 @@ set(SDL3_CORE_SOURCES
     ${SDL3_SRC}/video/yuv2rgb/yuv_rgb_lsx.c
     ${SDL3_SRC}/video/yuv2rgb/yuv_rgb_sse.c
     ${SDL3_SRC}/video/yuv2rgb/yuv_rgb_std.c
-    # Audio core
-    ${SDL3_SRC}/audio/SDL_audio.c
+    # Audio core (SDL_audio.c patched to add CIRCLEAUDIO_bootstrap)
+    ${CMAKE_SOURCE_DIR}/src/audio/SDL_audio_circle.c
+    ${CMAKE_SOURCE_DIR}/src/audio/circle/SDL_circleaudio.c
     ${SDL3_SRC}/audio/SDL_audiocvt.c
     ${SDL3_SRC}/audio/SDL_audiodev.c
     ${SDL3_SRC}/audio/SDL_audioqueue.c
@@ -196,7 +197,7 @@ target_include_directories(SDL3-circle
         ${CMAKE_SOURCE_DIR}/src/include   # SDL_build_config.h
     PRIVATE
         ${SDL3_SRC}/video                 # SDL_video_circle.c uses relative includes
-        ${SDL3_SRC}/audio                 # for audio backends
+        ${SDL3_SRC}/audio                 # SDL_audio_circle.c uses relative includes
         ${SDL3_SRC}/thread                # for thread headers
         ${CIRCLE_INCLUDE_DIRS}
 )
@@ -213,7 +214,7 @@ target_compile_definitions(SDL3-circle
         SDL_THREADS_DISABLED=1
         # Tell SDL3 we provide our own backends
         SDL_VIDEO_DRIVER_CIRCLE=1
-        SDL_AUDIO_DRIVER_CIRCLE=1
+        SDL_AUDIO_DRIVER_CIRCLE=1   # activates CIRCLEAUDIO_bootstrap in SDL_audio_circle.c
         SDL_TIMER_CIRCLE=1      # activates #ifdef SDL_TIMER_CIRCLE in SDL_circletimer.c
         SDL_TIME_CIRCLE=1       # activates #ifdef SDL_TIME_CIRCLE in SDL_circlesystime.c
         SDL_FILESYSTEM_CIRCLE=1
