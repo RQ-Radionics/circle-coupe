@@ -25,6 +25,11 @@
 
 #include "SDL_circlevideo.h"
 
+/* Event pump - implemented in src/events/circle/ */
+extern void SDL_CIRCLE_InitEvents(void);
+extern void SDL_CIRCLE_QuitEvents(void);
+extern void SDL_CIRCLE_PumpEvents(void);
+
 /* ---- Resolution defaults ---- */
 #ifndef CIRCLE_SCREEN_WIDTH
 #define CIRCLE_SCREEN_WIDTH   1280
@@ -119,9 +124,8 @@ static void CIRCLE_DestroyWindowFramebuffer(SDL_VideoDevice *_this,
 
 static void CIRCLE_PumpEvents(SDL_VideoDevice *_this)
 {
-    /* USB keyboard/mouse events are injected by the Circle kernel task.
-     * Nothing to poll here for now; task circle-coupe-7tm adds real input. */
     (void)_this;
+    SDL_CIRCLE_PumpEvents();
 }
 
 /* ------------------------------------------------------------------ */
@@ -150,6 +154,9 @@ static bool CIRCLE_VideoInit(SDL_VideoDevice *_this)
     SDL_DisplayMode mode;
     int w, h;
 
+    /* Initialise input event system */
+    SDL_CIRCLE_InitEvents();
+
     /* Initialise the Circle framebuffer */
     w = CIRCLE_SCREEN_WIDTH;
     h = CIRCLE_SCREEN_HEIGHT;
@@ -174,6 +181,7 @@ static bool CIRCLE_VideoInit(SDL_VideoDevice *_this)
 
 static void CIRCLE_VideoQuit(SDL_VideoDevice *_this)
 {
+    SDL_CIRCLE_QuitEvents();
     circle_fb_quit();
 }
 
