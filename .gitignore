@@ -1,4 +1,14 @@
+# Build directories
+build/
 
-# Dolt database files (added by bd init)
-.dolt/
-*.db
+# Circle kernel build artefacts
+kernel/*.o
+kernel/*.d
+kernel/*.elf
+kernel/*.lst
+kernel/*.map
+kernel/*.img
+
+# Python cache
+__pycache__/
+*.pyc

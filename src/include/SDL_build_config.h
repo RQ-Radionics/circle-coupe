@@ -23,7 +23,7 @@
 #define HAVE_MATH_H         1
 #define HAVE_STRING_H       1
 #define HAVE_STDLIB_H       1
-#define HAVE_STDIO_H        1
+#define HAVE_STDIO_H        1   /* needed for vsnprintf; fopen guarded separately */
 /* sys/types.h not available with -nostdinc; SDL3 guards it with HAVE_SYS_TYPES_H */
 /* #define HAVE_SYS_TYPES_H 1 */
 #define HAVE_WCHAR_H        1
@@ -143,5 +143,12 @@
 
 /* ---- Platform ---- */
 #define SDL_PLATFORM_CIRCLE     1
+
+/* ---- Bare-metal stdio guards ---- */
+/* Skip fstat-based directory test (no sys/stat.h on bare-metal) */
+#define SKIP_STDIO_DIR_TEST     1
+
+/* ---- Disable dynamic API (no dlopen on bare-metal) ---- */
+#define SDL_DYNAMIC_API         0
 
 #endif /* SDL_build_config_h_ */

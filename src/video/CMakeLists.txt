@@ -14,10 +14,10 @@ add_library(SDL3-circle-video STATIC
 target_include_directories(SDL3-circle-video PRIVATE
     ${SDL3_INC}
     ${SDL3_INC}/SDL3
-    ${SDL3_SRC}
-    ${SDL3_SRC}/video                  # SDL_circleevents.c uses events/SDL_*_c.h
     ${CMAKE_SOURCE_DIR}/src/include
     ${CMAKE_SOURCE_DIR}/src/video
+    ${SDL3_SRC}
+    ${SDL3_SRC}/video
     ${CIRCLE_INCLUDE_DIRS}
 )
 

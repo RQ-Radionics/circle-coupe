@@ -17,6 +17,7 @@ set(SDL3_CORE_SOURCES
     # Core SDL
     ${SDL3_SRC}/SDL.c
     ${SDL3_SRC}/SDL_assert.c
+    ${SDL3_SRC}/stdlib/SDL_murmur3.c
     ${SDL3_SRC}/SDL_error.c
     ${SDL3_SRC}/SDL_guid.c
     ${SDL3_SRC}/SDL_hashtable.c
@@ -33,6 +34,7 @@ set(SDL3_CORE_SOURCES
     ${SDL3_SRC}/events/SDL_displayevents.c
     ${SDL3_SRC}/events/SDL_dropevents.c
     ${SDL3_SRC}/events/SDL_events.c
+    ${SDL3_SRC}/events/SDL_eventwatch.c
     ${SDL3_SRC}/events/SDL_keyboard.c
     ${SDL3_SRC}/events/SDL_keymap.c
     ${SDL3_SRC}/events/SDL_mouse.c
@@ -41,16 +43,17 @@ set(SDL3_CORE_SOURCES
     ${SDL3_SRC}/events/SDL_scancode_tables.c
     ${SDL3_SRC}/events/SDL_touch.c
     ${SDL3_SRC}/events/SDL_windowevents.c
-    # Stdlib (SDL's internal implementations - no system libc needed)
+    # Stdlib (SDL's internal implementations)
+    # SDL_memcpy/memmove/memset excluded - conflicts with Circle/newlib.
+    # SDL_memset4 provided via our own stub (only function needed, not in newlib).
+    ${CMAKE_SOURCE_DIR}/src/SDL_memset4_circle.c
     ${SDL3_SRC}/stdlib/SDL_crc16.c
     ${SDL3_SRC}/stdlib/SDL_crc32.c
     ${SDL3_SRC}/stdlib/SDL_getenv.c
     ${SDL3_SRC}/stdlib/SDL_iconv.c
     ${SDL3_SRC}/stdlib/SDL_malloc.c
-    ${SDL3_SRC}/stdlib/SDL_memcpy.c
-    ${SDL3_SRC}/stdlib/SDL_memmove.c
-    ${SDL3_SRC}/stdlib/SDL_memset.c
     ${SDL3_SRC}/stdlib/SDL_mslibc.c
+    ${SDL3_SRC}/stdlib/SDL_murmur3.c
     ${SDL3_SRC}/stdlib/SDL_qsort.c
     ${SDL3_SRC}/stdlib/SDL_random.c
     ${SDL3_SRC}/stdlib/SDL_stdlib.c
@@ -112,6 +115,10 @@ set(SDL3_CORE_SOURCES
     # SDL_video.c replaced by patched copy that registers CIRCLE_bootstrap
     ${CMAKE_SOURCE_DIR}/src/video/SDL_video_circle.c
     ${SDL3_SRC}/video/SDL_video_unsupported.c
+    # Dummy video driver (fallback bootstrap)
+    ${SDL3_SRC}/video/dummy/SDL_nullvideo.c
+    ${SDL3_SRC}/video/dummy/SDL_nullevents.c
+    ${SDL3_SRC}/video/dummy/SDL_nullframebuffer.c
     ${SDL3_SRC}/video/SDL_vulkan_utils.c
     ${SDL3_SRC}/video/SDL_yuv.c
     ${SDL3_SRC}/video/yuv2rgb/yuv_rgb_lsx.c
@@ -120,6 +127,7 @@ set(SDL3_CORE_SOURCES
     # Audio core (SDL_audio.c patched to add CIRCLEAUDIO_bootstrap)
     ${CMAKE_SOURCE_DIR}/src/audio/SDL_audio_circle.c
     ${CMAKE_SOURCE_DIR}/src/audio/circle/SDL_circleaudio.c
+    ${SDL3_SRC}/audio/dummy/SDL_dummyaudio.c
     ${SDL3_SRC}/audio/SDL_audiocvt.c
     ${SDL3_SRC}/audio/SDL_audiodev.c
     ${SDL3_SRC}/audio/SDL_audioqueue.c
@@ -139,13 +147,24 @@ set(SDL3_CORE_SOURCES
     ${SDL3_SRC}/render/software/SDL_triangle.c
     # CPU info
     ${SDL3_SRC}/cpuinfo/SDL_cpuinfo.c
-    # Joystick (virtual only - real USB handled by Circle input events)
+    # Camera (disabled, but SDL_UpdateCamera() is called from SDL_PumpEvents)
+    ${SDL3_SRC}/camera/SDL_camera.c
+    ${SDL3_SRC}/camera/dummy/SDL_camera_dummy.c
+    # Joystick (dummy driver + virtual; real USB via Circle input events)
     ${SDL3_SRC}/joystick/SDL_joystick.c
     ${SDL3_SRC}/joystick/SDL_gamepad.c
     ${SDL3_SRC}/joystick/SDL_steam_virtual_gamepad.c
+    ${SDL3_SRC}/joystick/controller_type.c
     ${SDL3_SRC}/joystick/virtual/SDL_virtualjoystick.c
+    ${SDL3_SRC}/joystick/dummy/SDL_sysjoystick.c
     ${SDL3_SRC}/joystick/hidapi/SDL_hidapi_combined.c
     ${SDL3_SRC}/joystick/hidapi/SDL_hidapijoystick.c
+    # Sensor (disabled stub)
+    ${SDL3_SRC}/sensor/SDL_sensor.c
+    ${SDL3_SRC}/sensor/dummy/SDL_dummysensor.c
+    # Tray (dummy stub)
+    ${SDL3_SRC}/tray/SDL_tray_utils.c
+    ${SDL3_SRC}/tray/dummy/SDL_tray.c
     # Power (stub)
     ${SDL3_SRC}/power/SDL_power.c
     # Locale (stub)
@@ -163,8 +182,8 @@ set(SDL3_CORE_SOURCES
     ${SDL3_SRC}/filesystem/SDL_filesystem.c
     ${SDL3_SRC}/filesystem/dummy/SDL_sysfilesystem.c
     ${SDL3_SRC}/filesystem/dummy/SDL_sysfsops.c
-    # IO
-    ${SDL3_SRC}/io/SDL_iostream.c
+    # IO (SDL_iostream patched to exclude POSIX FD backend on bare-metal)
+    ${CMAKE_SOURCE_DIR}/src/SDL_iostream_circle.c
     ${SDL3_SRC}/io/SDL_asyncio.c
     ${SDL3_SRC}/io/generic/SDL_asyncio_generic.c
     # Storage (generic)
@@ -193,12 +212,13 @@ target_include_directories(SDL3-circle
     PUBLIC
         ${SDL3_INC}
         ${SDL3_INC}/SDL3
-        ${SDL3_SRC}
         ${CMAKE_SOURCE_DIR}/src/include   # SDL_build_config.h
+        ${SDL3_SRC}
     PRIVATE
         ${SDL3_SRC}/video                 # SDL_video_circle.c uses relative includes
         ${SDL3_SRC}/audio                 # SDL_audio_circle.c uses relative includes
         ${SDL3_SRC}/thread                # for thread headers
+        ${SDL3_SRC}/io                    # SDL_iostream_circle.c needs SDL_iostream_c.h
         ${CIRCLE_INCLUDE_DIRS}
 )
 
@@ -215,9 +235,19 @@ target_compile_definitions(SDL3-circle
         # Tell SDL3 we provide our own backends
         SDL_VIDEO_DRIVER_CIRCLE=1
         SDL_AUDIO_DRIVER_CIRCLE=1   # activates CIRCLEAUDIO_bootstrap in SDL_audio_circle.c
+        # SDL_DYNAMIC_API=0 is handled via src/include/SDL_dynapi.h override (not -D flag)
         SDL_TIMER_CIRCLE=1      # activates #ifdef SDL_TIMER_CIRCLE in SDL_circletimer.c
         SDL_TIME_CIRCLE=1       # activates #ifdef SDL_TIME_CIRCLE in SDL_circlesystime.c
         SDL_FILESYSTEM_CIRCLE=1
+        # Fallback dummy backends (referenced in patched SDL_video/audio_circle.c)
+        SDL_VIDEO_DRIVER_DUMMY=1
+        SDL_AUDIO_DRIVER_DUMMY=1
+        SDL_JOYSTICK_DISABLED=1
+        SDL_HAPTIC_DISABLED=1
+        SDL_SENSOR_DISABLED=1
+        SDL_CAMERA_DRIVER_DUMMY=1
+        SDL_DIALOG_DUMMY=1
+        SDL_TRAY_DUMMY=1
         # Disable backends we don't have
         SDL_VIDEO_OPENGL=0
         SDL_VIDEO_OPENGLES=0
