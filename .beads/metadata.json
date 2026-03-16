@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "circle_coupe",
+  "project_id": "f322b346-d85b-4a8a-9540-aaf8a1f20d9f"
+}
