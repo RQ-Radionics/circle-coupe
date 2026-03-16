@@ -86,8 +86,9 @@ set(SDL3_CORE_SOURCES
     ${SDL3_SRC}/thread/generic/SDL_systhread.c
     ${SDL3_SRC}/thread/generic/SDL_systls.c
     ${SDL3_SRC}/thread/SDL_thread.c
-    # Timer - circle backend (to be created in src/timer/circle/)
+    # Timer - SDL3 core + Circle platform implementation
     ${SDL3_SRC}/timer/SDL_timer.c
+    ${CMAKE_SOURCE_DIR}/src/timer/circle/SDL_circletimer.c
     # Video core
     ${SDL3_SRC}/video/SDL_blit.c
     ${SDL3_SRC}/video/SDL_blit_0.c
@@ -147,12 +148,19 @@ set(SDL3_CORE_SOURCES
     ${SDL3_SRC}/power/SDL_power.c
     # Locale (stub)
     ${SDL3_SRC}/locale/SDL_locale.c
-    # Misc
+    # Misc - OpenURL stub (no browser on bare metal)
     ${SDL3_SRC}/misc/SDL_url.c
-    # Time
+    ${SDL3_SRC}/misc/dummy/SDL_sysurl.c
+    # Locale - stub (returns "en_US" via Circle keymap setting)
+    ${SDL3_SRC}/locale/SDL_locale.c
+    ${SDL3_SRC}/locale/dummy/SDL_syslocale.c
+    # Time - SDL3 core + Circle platform implementation
     ${SDL3_SRC}/time/SDL_time.c
+    ${CMAKE_SOURCE_DIR}/src/time/circle/SDL_circlesystime.c
     # Filesystem (stub - FatFs added later)
     ${SDL3_SRC}/filesystem/SDL_filesystem.c
+    ${SDL3_SRC}/filesystem/dummy/SDL_sysfilesystem.c
+    ${SDL3_SRC}/filesystem/dummy/SDL_sysfsops.c
     # IO
     ${SDL3_SRC}/io/SDL_iostream.c
     ${SDL3_SRC}/io/SDL_asyncio.c
@@ -170,10 +178,9 @@ set(SDL3_CORE_SOURCES
 # ---------------------------------------------------------------------------
 add_subdirectory(video)
 add_subdirectory(audio)
-add_subdirectory(timer)
-add_subdirectory(thread)
-add_subdirectory(filesystem)
-add_subdirectory(misc)
+add_subdirectory(timer)   # builds SDL3-circle-timer (C++ glue to CTimer)
+add_subdirectory(thread)  # builds SDL3-circle-thread (placeholder)
+# filesystem, misc and time are compiled directly into SDL3-circle core above
 
 # ---------------------------------------------------------------------------
 # SDL3-Circle static library
@@ -203,7 +210,8 @@ target_compile_definitions(SDL3-circle
         # Tell SDL3 we provide our own backends
         SDL_VIDEO_DRIVER_CIRCLE=1
         SDL_AUDIO_DRIVER_CIRCLE=1
-        SDL_TIMER_CIRCLE=1
+        SDL_TIMER_CIRCLE=1      # activates #ifdef SDL_TIMER_CIRCLE in SDL_circletimer.c
+        SDL_TIME_CIRCLE=1       # activates #ifdef SDL_TIME_CIRCLE in SDL_circlesystime.c
         SDL_FILESYSTEM_CIRCLE=1
         # Disable backends we don't have
         SDL_VIDEO_OPENGL=0
@@ -213,10 +221,8 @@ target_compile_definitions(SDL3-circle
 
 target_link_libraries(SDL3-circle
     PRIVATE
-        SDL3-circle-video
-        SDL3-circle-audio
-        SDL3-circle-timer
-        SDL3-circle-thread
-        SDL3-circle-filesystem
-        SDL3-circle-misc
+        SDL3-circle-video      # stub (task qjs)
+        SDL3-circle-audio      # stub (task 7h3)
+        SDL3-circle-timer      # C++ glue to CTimer/CScheduler
+        SDL3-circle-thread     # stub (single-threaded)
 )
