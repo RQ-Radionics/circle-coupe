@@ -9,6 +9,9 @@ kernel/*.lst
 kernel/*.map
 kernel/*.img
 
+# Test CMake directory
+test/
+
 # Python cache
 __pycache__/
 *.pyc
