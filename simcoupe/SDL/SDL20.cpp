@@ -148,8 +148,13 @@ void SDLTexture::Update(const FrameBuffer& fb)
         int src_w = fb.Width();
         int src_h = fb.Height();
 
-        // Scale to fill framebuffer, maintaining aspect ratio (2x vertical for SAM 192-line output)
-        int dst_h = src_h * 2;
+        // pGuiScreen has height*2 (already double-height for GUI rendering).
+        // pFrameBuffer has height and needs 2x vertical scaling.
+        // Use GUI::IsActive() to know which buffer we're rendering.
+        bool is_gui = GUI::IsActive();
+        int scale_y = is_gui ? 1 : 2;
+
+        int dst_h = src_h * scale_y;
         int dst_w = src_w;
         if (dst_h > (int)fb_h) dst_h = (int)fb_h;
         if (dst_w > (int)fb_w) dst_w = (int)fb_w;
@@ -165,15 +170,25 @@ void SDLTexture::Update(const FrameBuffer& fb)
                 row[x] = 0;
         }
 
-        // Blit with vertical 2x scaling
-        for (int y = 0; y < src_h && (y * 2 + 1) < (int)fb_h; y++) {
-            auto pLine = fb.GetLine(y);
-            uint32_t *dst0 = (uint32_t *)((uint8_t *)fbuf + (off_y + y * 2    ) * fb_pitch) + off_x;
-            uint32_t *dst1 = (uint32_t *)((uint8_t *)fbuf + (off_y + y * 2 + 1) * fb_pitch) + off_x;
-            for (int x = 0; x < dst_w; x++) {
-                uint32_t c = palette[pLine[x]];
-                dst0[x] = c;
-                dst1[x] = c;
+        if (is_gui) {
+            // GUI screen: 1:1 blit (already double-height), clip to framebuffer
+            for (int y = 0; y < dst_h; y++) {
+                auto pLine = fb.GetLine(y);
+                uint32_t *dst = (uint32_t *)((uint8_t *)fbuf + (off_y + y) * fb_pitch) + off_x;
+                for (int x = 0; x < dst_w; x++)
+                    dst[x] = palette[pLine[x]];
+            }
+        } else {
+            // Emulator screen: 2x vertical scaling
+            for (int y = 0; y < src_h && (off_y + y * 2 + 1) < (int)fb_h; y++) {
+                auto pLine = fb.GetLine(y);
+                uint32_t *dst0 = (uint32_t *)((uint8_t *)fbuf + (off_y + y * 2    ) * fb_pitch) + off_x;
+                uint32_t *dst1 = (uint32_t *)((uint8_t *)fbuf + (off_y + y * 2 + 1) * fb_pitch) + off_x;
+                for (int x = 0; x < dst_w; x++) {
+                    uint32_t c = palette[pLine[x]];
+                    dst0[x] = c;
+                    dst1[x] = c;
+                }
             }
         }
     }

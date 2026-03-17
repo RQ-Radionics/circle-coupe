@@ -31,6 +31,7 @@
 
 #include <ctype.h>
 
+
 #include "Expr.h"
 #include "Font.h"
 #include "Frame.h"
@@ -2219,7 +2220,7 @@ bool FileView::Refresh()
         std::error_code error{};
         for (auto& entry : fs::directory_iterator(m_path, error))
         {
-            auto file_path = entry.path();// m_path / entry->d_name;
+            auto file_path = entry.path();
             auto file_name = file_path.filename().string();
             auto file_ext = tolower(file_path.extension().string());
 

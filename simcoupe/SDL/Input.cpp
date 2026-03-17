@@ -662,9 +662,18 @@ void Input::Update()
 
 int Input::MapChar(int nChar_, int* /*pnMods_*/)
 {
+#ifdef __circle__
+    // On bare-metal, circle_simcoupe_key calls Keyboard::SetKey with the ASCII
+    // character value directly (e.g. 'a'=97). PrepareKeyTable calls MapChar to
+    // find which key_states slot to check. Return the ASCII value as-is so the
+    // slot matches what SetKey wrote.
+    if (nChar_ > 0 && nChar_ < HK_MIN)
+        return nChar_;
+#else
     // Regular characters details aren't known until the key press
     if (nChar_ < HK_MIN)
         return 0;
+#endif
 
     if (nChar_ >= HK_MIN && nChar_ < HK_MAX)
         return nChar_;

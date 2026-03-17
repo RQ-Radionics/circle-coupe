@@ -211,6 +211,12 @@ int stat(const char *path, struct stat *st)
     return _stat_r(&r, path, st);
 }
 
+/* lstat() -- no symlinks on bare-metal, same as stat() */
+int lstat(const char *path, struct stat *st)
+{
+    return stat(path, st);
+}
+
 int _isatty_r(struct _reent *r, int fd)
 {
     (void)r;
