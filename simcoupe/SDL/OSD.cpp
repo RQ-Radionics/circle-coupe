@@ -38,7 +38,11 @@ bool OSD::Init()
     SetErrorMode(SEM_FAILCRITICALERRORS);
 #endif
 
+#ifdef HAVE_LIBSDL3
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS | SDL_INIT_JOYSTICK))
+#else
     if (SDL_Init(SDL_INIT_EVERYTHING) < 0)
+#endif
     {
         Message(MsgType::Error, "SDL init failed: {}", SDL_GetError());
         return false;
@@ -58,6 +62,10 @@ std::string OSD::MakeFilePath(PathType type, const std::string& filename)
     fs::path base_path;
     fs::path path;
 
+#ifdef __circle__
+    // On bare-metal, all paths are on the SD card root
+    base_path = "/";
+#else
     std::string exe;
     exe.resize(wai_getExecutablePath(nullptr, 0, nullptr));
     wai_getExecutablePath(exe.data(), exe.length(), nullptr);
@@ -70,11 +78,14 @@ std::string OSD::MakeFilePath(PathType type, const std::string& filename)
 #else
     base_path = getenv("HOME");
 #endif
+#endif // __circle__
 
     switch (type)
     {
     case PathType::Settings:
-#if defined(_WINDOWS)
+#if defined(__circle__)
+        path = "/simcoupe";
+#elif defined(_WINDOWS)
         path = fs::path(getenv("APPDATA")) / "SimCoupe";
 #elif defined(__APPLE__)
         path = base_path / "Library/Preferences/SimCoupe";
@@ -96,7 +107,9 @@ std::string OSD::MakeFilePath(PathType type, const std::string& filename)
             break;
         }
 
-#if defined(__APPLE__)
+#if defined(__circle__)
+        path = "/simcoupe/output";
+#elif defined(__APPLE__)
         path = base_path / "Documents/SimCoupe";
 #elif !defined(_WINDOWS) && !defined(__AMIGAOS4__)
         path = base_path / "Desktop";
@@ -109,12 +122,21 @@ std::string OSD::MakeFilePath(PathType type, const std::string& filename)
         break;
 
     case PathType::Resource:
-#if defined(__APPLE__) && defined(HAVE_LIBSDL2)
+#if defined(__circle__)
+        // Resources on SD card root
+        path = "/";
+#elif defined(__APPLE__) && defined(HAVE_LIBSDL2)
         // Resources path in the app bundle
         if (auto pBasePath = SDL_GetBasePath())
         {
             path = pBasePath;
             SDL_free(pBasePath);
+        }
+#elif defined(__APPLE__) && defined(HAVE_LIBSDL3)
+        // SDL3: SDL_GetBasePath returns const char*, no free needed
+        if (auto pBasePath = SDL_GetBasePath())
+        {
+            path = pBasePath;
         }
 #elif defined(RESOURCE_DIR) && !defined(__AMIGAOS4__)
         path = RESOURCE_DIR;
@@ -161,12 +183,23 @@ std::string OSD::GetClipboardText()
 {
     std::string text;
 
+#ifdef HAVE_LIBSDL3
+    if (SDL_HasClipboardText())
+    {
+        auto ptr = SDL_GetClipboardText();
+        if (ptr)
+            text = ptr;
+        // SDL3: SDL_GetClipboardText returns internally-managed string, must still SDL_free
+        SDL_free(ptr);
+    }
+#else
     if (SDL_HasClipboardText() == SDL_TRUE)
     {
         auto ptr = SDL_GetClipboardText();
         text = ptr;
         SDL_free(ptr);
     }
+#endif
 
     return text;
 }
@@ -182,6 +215,9 @@ void OSD::DebugTrace(const std::string& str)
     OutputDebugString(str.c_str());
 #elif defined (__AMIGAOS4__)
     puts(str.c_str());
+#elif defined(__circle__)
+    // On bare-metal, use SDL_Log (goes to Circle's serial/screen logger)
+    SDL_Log("%s", str.c_str());
 #else
     fprintf(stderr, "%s", str.c_str());
 #endif

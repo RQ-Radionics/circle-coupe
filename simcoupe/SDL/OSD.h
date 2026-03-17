@@ -20,22 +20,31 @@
 
 #pragma once
 
+#ifndef __circle__
 #include <fcntl.h>
+#endif
 
 #ifdef HAVE_LIBSDL2
 #include "SDL2/SDL.h"
+#elif defined(HAVE_LIBSDL3)
+#include <SDL3/SDL.h>
 #endif
 
 #ifdef __APPLE__
 #include <sys/disk.h>       // for DKIOCGETBLOCKCOUNT
 #define main SimCoupe_main  // rename main() so Cocoa can use it
+#elif defined(__circle__)
+// circle-coupe: rename main() so CKernel::Run() can call it as SimCoupeMain()
+#define main SimCoupeMain
 #endif
 
 #ifndef _WINDOWS
 
+#ifndef __circle__
 #include <sys/ioctl.h>
 #include <dirent.h>
 #include <unistd.h>
+#endif
 
 #define PATH_SEPARATOR      '/'
 

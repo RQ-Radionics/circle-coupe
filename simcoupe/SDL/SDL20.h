@@ -1,6 +1,6 @@
 // Part of SimCoupe - A SAM Coupe emulator
 //
-// SDL20.h: Hardware accelerated textures for SDL 2.0
+// SDL20.h: Hardware accelerated textures for SDL 2.0/3.0
 //
 //  Copyright (c) 1999-2014 Simon Owen
 //
@@ -20,7 +20,7 @@
 
 #pragma once
 
-#ifdef HAVE_LIBSDL2
+#if defined(HAVE_LIBSDL2) || defined(HAVE_LIBSDL3)
 
 #include "Video.h"
 
@@ -33,8 +33,10 @@ using unique_sdl_window = unique_resource<SDL_Window*, nullptr, SDLWindowDeleter
 struct SDLTextureDeleter { void operator()(SDL_Texture* texture) { SDL_DestroyTexture(texture); } };
 using unique_sdl_texture = unique_resource<SDL_Texture*, nullptr, SDLTextureDeleter>;
 
+#ifdef HAVE_LIBSDL2
 struct SDLPaletteDeleter { void operator()(SDL_Palette* palette) { SDL_FreePalette(palette); } };
 using unique_sdl_palette = unique_resource<SDL_Palette*, nullptr, SDLPaletteDeleter>;
+#endif
 
 
 class SDLTexture final : public IVideoBase
@@ -68,7 +70,9 @@ private:
     unique_sdl_texture m_scaled_texture;
     unique_sdl_texture m_composed_texture;
     unique_sdl_texture m_prev_composed_texture;
+#ifdef HAVE_LIBSDL2
     unique_sdl_palette m_palette_texture;
+#endif
 
     SDL_Rect m_rSource{};
     SDL_Rect m_rTarget{};
@@ -79,4 +83,4 @@ private:
     int m_int_scale{ 1 };
 };
 
-#endif // HAVE_LIBSDL2
+#endif // HAVE_LIBSDL2 || HAVE_LIBSDL3

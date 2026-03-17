@@ -26,7 +26,7 @@
 
 constexpr auto MIN_LATENCY_FRAMES = 4;
 
-static SDL_AudioDeviceID dev;
+static SDL_AudioStream* stream;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -36,43 +36,47 @@ bool Audio::Init()
 
     SDL_AudioSpec desired{};
     desired.freq = SAMPLE_FREQ;
-    desired.format = AUDIO_S16LSB;
+    desired.format = SDL_AUDIO_S16LE;
     desired.channels = SAMPLE_CHANNELS;
-    desired.samples = 512;
 
-    dev = SDL_OpenAudioDevice(nullptr, 0, &desired, nullptr, 0);
-    if (!dev)
+    stream = SDL_OpenAudioDeviceStream(
+        SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK,
+        &desired,
+        nullptr,    // no callback — push data manually
+        nullptr);
+
+    if (!stream)
     {
-        TRACE("SDL_OpenAudio failed: {}\n", SDL_GetError());
+        TRACE("SDL_OpenAudioDeviceStream failed: {}\n", SDL_GetError());
         return false;
     }
 
-    SDL_PauseAudioDevice(dev, 0);
+    SDL_ResumeAudioStreamDevice(stream);
     return true;
 }
 
 void Audio::Exit()
 {
-    if (dev)
+    if (stream)
     {
-        SDL_CloseAudioDevice(dev);
-        dev = 0;
+        SDL_DestroyAudioStream(stream);
+        stream = nullptr;
     }
 }
 
 float Audio::AddData(uint8_t* pData_, int len_bytes)
 {
-    SDL_QueueAudio(dev, pData_, len_bytes);
+    SDL_PutAudioStreamData(stream, pData_, len_bytes);
 
     auto buffer_frames = std::max(GetOption(latency), MIN_LATENCY_FRAMES);
-    Uint32 buffer_size = SAMPLES_PER_FRAME * buffer_frames * BYTES_PER_SAMPLE;
+    int buffer_size = SAMPLES_PER_FRAME * buffer_frames * BYTES_PER_SAMPLE;
 
 #if 1
-    while (SDL_GetQueuedAudioSize(dev) >= buffer_size)
+    while (SDL_GetAudioStreamQueued(stream) >= buffer_size)
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        SDL_Delay(1);
     }
 #endif
 
-    return static_cast<float>(SDL_GetQueuedAudioSize(dev)) / buffer_size;
+    return static_cast<float>(SDL_GetAudioStreamQueued(stream)) / buffer_size;
 }

@@ -35,6 +35,9 @@ set(CIRCLE_CPU_FLAGS
 # NOTE: -nostdinc is NOT set here because SDL3 sources use newlib headers
 # (stdint.h, string.h, etc.) via arm-none-eabi-gcc's built-in include path.
 # Circle kernel code that must avoid libc should add -nostdinc per-target.
+# CIRCLE_BARE_FLAGS: Full bare-metal flags for per-target use (SDL3-circle, kernel).
+# NOT used in CMAKE_CXX_FLAGS_INIT because -ffreestanding breaks hosted C++ headers
+# (<string>, <fstream>, etc.) needed by SimCoupe dependencies (SAASound, resid, fmt).
 set(CIRCLE_BARE_FLAGS
     "-ffreestanding -fno-exceptions -fno-rtti -fno-unwind-tables"
     " -fno-asynchronous-unwind-tables -fsigned-char -O2 -g"
@@ -43,10 +46,10 @@ set(CIRCLE_BARE_FLAGS
 )
 string(REPLACE ";" " " CIRCLE_BARE_FLAGS "${CIRCLE_BARE_FLAGS}")
 
-# Suppress -fno-rtti warning for C files (valid only for C++)
-set(CIRCLE_C_EXTRA   "-fno-rtti")   # will be filtered per-target if needed
 set(CMAKE_C_FLAGS_INIT   "${CIRCLE_CPU_FLAGS} -ffreestanding -fno-unwind-tables -fno-asynchronous-unwind-tables -fsigned-char -O2 -g -DAARCH=32 -DRASPPI=3 -DSTDLIB_SUPPORT=1 -D__circle__=500100 -D__VCCOREVER__=0x04000000 -U__unix__ -U__linux__")
-set(CMAKE_CXX_FLAGS_INIT "${CIRCLE_CPU_FLAGS} ${CIRCLE_BARE_FLAGS} -std=c++17 -Wno-aligned-new")
+# CXX: NO -ffreestanding here — hosted C++ headers required by SimCoupe deps.
+# Targets that need freestanding (SDL3-circle, kernel) add it via target_compile_options.
+set(CMAKE_CXX_FLAGS_INIT "${CIRCLE_CPU_FLAGS} -fno-exceptions -fno-rtti -fno-unwind-tables -fno-asynchronous-unwind-tables -fsigned-char -O2 -g -DAARCH=32 -DRASPPI=3 -DSTDLIB_SUPPORT=1 -D__circle__=500100 -D__VCCOREVER__=0x04000000 -U__unix__ -U__linux__ -std=c++17 -Wno-aligned-new")
 set(CMAKE_ASM_FLAGS_INIT "${CIRCLE_CPU_FLAGS} -ffreestanding -O2 -g -DAARCH=32 -DRASPPI=3 -DSTDLIB_SUPPORT=1 -D__circle__=500100 -U__unix__ -U__linux__")
 
 # No dynamic linking on bare-metal

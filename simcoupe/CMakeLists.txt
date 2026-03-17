@@ -110,10 +110,15 @@ if (BUILD_WIN32)
 elseif (BUILD_SDL)
   set(SDL_CPP_FILES
     SDL/Audio.cpp SDL/IDEDisk.cpp SDL/Input.cpp SDL/MIDI.cpp
-    SDL/OSD.cpp SDL/SDL20.cpp SDL/SDL20_GL3.cpp SDL/UI.cpp)
+    SDL/OSD.cpp SDL/SDL20.cpp SDL/UI.cpp)
   set(SDL_H_FILES
     SDL/Audio.h SDL/IDEDisk.h SDL/Input.h SDL/MIDI.h SDL/OSD.h
-    SDL/SDL20.h SDL/SDL20_GL3.h SDL/UI.h)
+    SDL/SDL20.h SDL/UI.h)
+  # OpenGL backend only on hosted platforms (not bare-metal Circle)
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Generic")
+    list(APPEND SDL_CPP_FILES SDL/SDL20_GL3.cpp)
+    list(APPEND SDL_H_FILES SDL/SDL20_GL3.h)
+  endif()
 
   set(SOURCE_FILES ${SOURCE_FILES} ${SDL_CPP_FILES})
   set(HEADER_FILES ${HEADER_FILES} ${SDL_H_FILES})
@@ -137,6 +142,12 @@ elseif (BUILD_SDL)
     set(SOURCE_FILES ${SOURCE_FILES} Win32/Floppy.cpp)
     set(HEADER_FILES ${HEADER_FILES} Win32/Floppy.h)
   endif()
+
+  # Circle bare-metal: add CKernel entry point
+  if(CMAKE_SYSTEM_NAME STREQUAL "Generic")
+    set(SOURCE_FILES ${SOURCE_FILES} kernel.cpp)
+    set(HEADER_FILES ${HEADER_FILES} kernel.h)
+  endif()
 endif()
 
 if (WIN32)
@@ -155,9 +166,17 @@ source_group("Resource Files" FILES ${RESOURCE_FILES})
 
 ########
 
-add_executable(${PROJECT_NAME}
-  WIN32 MACOSX_BUNDLE
-  ${SOURCE_FILES} ${HEADER_FILES} ${RESOURCE_FILES})
+if(CMAKE_SYSTEM_NAME STREQUAL "Generic")
+  # On bare-metal Circle: build SimCoupe as a static library.
+  # The final kernel8-32.img is linked by the Makefile with Circle's startup
+  # code (main.o, syscalls.o) and linker script.
+  add_library(${PROJECT_NAME} STATIC
+    ${SOURCE_FILES} ${HEADER_FILES} ${RESOURCE_FILES})
+else()
+  add_executable(${PROJECT_NAME}
+    WIN32 MACOSX_BUNDLE
+    ${SOURCE_FILES} ${HEADER_FILES} ${RESOURCE_FILES})
+endif()
 
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
 
@@ -188,9 +207,11 @@ if (NOT HAVE_STD_FILESYSTEM)
   target_include_directories(${PROJECT_NAME} PRIVATE Extern/ghc)
 endif()
 
-# OpenGL loader
-target_include_directories(${PROJECT_NAME} PRIVATE Extern/gl3w/include)
-target_link_libraries(${PROJECT_NAME} PRIVATE ${CMAKE_DL_LIBS})
+# OpenGL loader (not available on bare-metal Circle)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Generic")
+  target_include_directories(${PROJECT_NAME} PRIVATE Extern/gl3w/include)
+  target_link_libraries(${PROJECT_NAME} PRIVATE ${CMAKE_DL_LIBS})
+endif()
 
 # Z80 core
 message(STATUS "Fetching github.com/kosarev/z80")
@@ -206,9 +227,13 @@ message(STATUS "Fetching github.com/fmtlib/fmt")
 FetchContent_Declare(
   fmt
   GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-  GIT_TAG e69e5f977d458f2650bb346dadf2ad30c5320281 )
+  GIT_TAG 40626af88bd7df9a5fb80be7b25ac85b122d6c21 )  # 11.2.0 (GCC 15 compat)
 
 set(FMT_INSTALL OFF)
+# On bare-metal: disable fmt's OS-specific code (fileno, fdopen, etc.)
+if(CMAKE_SYSTEM_NAME STREQUAL "Generic")
+  set(FMT_OS OFF CACHE BOOL "" FORCE)
+endif()
 FetchContent_MakeAvailable(fmt)
 target_link_libraries(${PROJECT_NAME} PRIVATE fmt)
 target_include_directories(${PROJECT_NAME} PRIVATE ${fmt_SOURCE_DIR}/include)
@@ -231,21 +256,61 @@ FetchContent_Declare(
   GIT_TAG eb93bd36f6253471bf709bb9745176d1f9c994f0
   SOURCE_SUBDIR non-existent-directory )
 FetchContent_MakeAvailable(spectrum)
+# libspectrum bug: internals.h declares 'int' return but definition uses 'libspectrum_error' enum.
+# GCC 15 treats this as a hard error. Patch the header in-tree after fetch.
+if(CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "14")
+  file(READ "${spectrum_SOURCE_DIR}/internals.h" _spectrum_internals)
+  string(REPLACE
+    "int libspectrum_split_to_48k_pages"
+    "libspectrum_error libspectrum_split_to_48k_pages"
+    _spectrum_internals "${_spectrum_internals}")
+  file(WRITE "${spectrum_SOURCE_DIR}/internals.h" "${_spectrum_internals}")
+endif()
 add_subdirectory(${spectrum_SOURCE_DIR} ${spectrum_BINARY_DIR} EXCLUDE_FROM_ALL)
+# On bare-metal without zlib: remove zip.c and zlib.c which unconditionally include <zlib.h>
+if(CMAKE_SYSTEM_NAME STREQUAL "Generic")
+  get_target_property(_spectrum_srcs spectrum SOURCES)
+  list(FILTER _spectrum_srcs EXCLUDE REGEX "(zip|zlib)\\.c$")
+  set_target_properties(spectrum PROPERTIES SOURCES "${_spectrum_srcs}")
+endif()
 target_link_libraries(${PROJECT_NAME} PRIVATE spectrum)
 target_include_directories(${PROJECT_NAME} PRIVATE ${spectrum_SOURCE_DIR})
 
-add_subdirectory(Extern/whereami EXCLUDE_FROM_ALL)
-target_link_libraries(${PROJECT_NAME} PRIVATE whereami)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Generic")
+  add_subdirectory(Extern/whereami EXCLUDE_FROM_ALL)
+  target_link_libraries(${PROJECT_NAME} PRIVATE whereami)
+else()
+  # On bare-metal: whereami is unavailable. Provide a stub (returns 0-length path).
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/whereami_stub.c"
+    "#include \"whereami.h\"\n"
+    "int wai_getExecutablePath(char* out, int capacity, int* dirname_length) {\n"
+    "  (void)out; (void)capacity; (void)dirname_length; return 0;\n"
+    "}\n"
+    "int wai_getModulePath(char* out, int capacity, int* dirname_length) {\n"
+    "  (void)out; (void)capacity; (void)dirname_length; return 0;\n"
+    "}\n")
+  file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/whereami.h"
+    "#ifndef WHEREAMI_H\n#define WHEREAMI_H\n"
+    "#ifdef __cplusplus\nextern \"C\" {\n#endif\n"
+    "int wai_getExecutablePath(char* out, int capacity, int* dirname_length);\n"
+    "int wai_getModulePath(char* out, int capacity, int* dirname_length);\n"
+    "#ifdef __cplusplus\n}\n#endif\n"
+    "#endif\n")
+  add_library(whereami STATIC "${CMAKE_CURRENT_BINARY_DIR}/whereami_stub.c")
+  target_include_directories(whereami PUBLIC "${CMAKE_CURRENT_BINARY_DIR}")
+  target_link_libraries(${PROJECT_NAME} PRIVATE whereami)
+endif()
 
 # Use bundled version of fdrawcmd.h for fdrawcmd.sys definitions.
 if (WIN32)
   target_include_directories(${PROJECT_NAME} PRIVATE Extern/fdrawcmd)
 endif()
 
-set(CMAKE_THREAD_PREFER_PTHREAD pthread)
-find_package(Threads REQUIRED)
-target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Generic")
+  set(CMAKE_THREAD_PREFER_PTHREAD pthread)
+  find_package(Threads REQUIRED)
+  target_link_libraries(${PROJECT_NAME} PRIVATE Threads::Threads)
+endif()
 
 find_package(ZLIB)
 if (ZLIB_FOUND)
@@ -284,6 +349,13 @@ if(SIMCOUPE_PORTABLE)
 endif()
 FetchContent_MakeAvailable(saasound)
 add_subdirectory(${saasound_SOURCE_DIR} ${saasound_BINARY_DIR} ${SAASOUND_EXCLUDE_FLAG})
+# On bare-metal newlib: strnicmp/stricmp don't exist, map to POSIX equivalents
+if(CMAKE_SYSTEM_NAME STREQUAL "Generic")
+  target_compile_definitions(SAASound PRIVATE
+    strnicmp=strncasecmp
+    stricmp=strcasecmp
+  )
+endif()
 target_link_libraries(${PROJECT_NAME} PRIVATE SAASound)
 # TODO: remove once upstream is compatible
 target_include_directories(${PROJECT_NAME} PRIVATE ${saasound_SOURCE_DIR}/include)
@@ -315,7 +387,17 @@ endif()
 if (BUILD_WIN32)
   target_link_libraries(${PROJECT_NAME} PRIVATE dinput8.lib dxguid.lib)
 elseif (BUILD_SDL)
-  if (SIMCOUPE_PORTABLE)
+  if (CMAKE_SYSTEM_NAME STREQUAL "Generic")
+    # Circle bare-metal: use our SDL3-circle static library (built in src/)
+    message(STATUS "SimCoupe: using SDL3-circle for bare-metal")
+    target_link_libraries(${PROJECT_NAME} PRIVATE SDL3-circle)
+    # Circle include paths: FatFs, Circle core headers
+    target_include_directories(${PROJECT_NAME} PRIVATE
+      ${CIRCLE_HOME}/addon/fatfs
+      ${CIRCLE_HOME}/include
+      ${CIRCLE_HOME}/addon
+    )
+  elseif (SIMCOUPE_PORTABLE)
     message(STATUS "Fetching SDL2 from GitHub")
     FetchContent_Declare(
       sdl2
@@ -332,18 +414,30 @@ elseif (BUILD_SDL)
     target_include_directories(${PROJECT_NAME} PRIVATE ${SDL2_INCLUDE_DIR})
     target_link_libraries(${PROJECT_NAME} PRIVATE ${SDL2_LIBRARY})
   endif()
-  set(HAVE_LIBSDL2 1)
+  if (CMAKE_SYSTEM_NAME STREQUAL "Generic")
+    set(HAVE_LIBSDL3 1)
+  else()
+    set(HAVE_LIBSDL2 1)
+  endif()
 
-  find_package(OpenGL)
-  if (OPENGL_FOUND)
-    target_link_libraries(${PROJECT_NAME} PRIVATE ${OPENGL_LIBRARIES})
-    set(HAVE_OPENGL 1)
+  if (NOT CMAKE_SYSTEM_NAME STREQUAL "Generic")
+    find_package(OpenGL)
+    if (OPENGL_FOUND)
+      target_link_libraries(${PROJECT_NAME} PRIVATE ${OPENGL_LIBRARIES})
+      set(HAVE_OPENGL 1)
+    endif()
   endif()
 endif()
 
 ########
 
 target_include_directories(${PROJECT_NAME} PRIVATE Base)
+
+# On Circle bare-metal: SDL3 requires sizeof(enum)==sizeof(int) (-fno-short-enums),
+# and SimCoupe uses try/catch in a few places (-fexceptions overrides toolchain -fno-exceptions).
+if (CMAKE_SYSTEM_NAME STREQUAL "Generic")
+  target_compile_options(${PROJECT_NAME} PRIVATE -fno-short-enums -fexceptions)
+endif()
 
 if (BUILD_WIN32)
   target_include_directories(${PROJECT_NAME} PRIVATE Win32)

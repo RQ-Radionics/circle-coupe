@@ -33,7 +33,9 @@
 #include "Options.h"
 #include "Sound.h"
 #include "SDL20.h"
+#ifndef HAVE_LIBSDL3
 #include "SDL20_GL3.h"
+#endif
 
 bool UI::Init(bool fFirstInit_/*=false*/)
 {
@@ -42,8 +44,13 @@ bool UI::Init(bool fFirstInit_/*=false*/)
     Exit(true);
 
     // Set the window caption and disable the cursor until needed
+#ifdef HAVE_LIBSDL3
+    SDL_SetEventEnabled(SDL_EVENT_DROP_FILE, true);
+    SDL_HideCursor();
+#else
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
     SDL_ShowCursor(SDL_DISABLE);
+#endif
 
     // To help on platforms without a native GUI, we'll display a one-time welcome message
 #if !defined(__APPLE__) && !defined(_WINDOWS)
@@ -112,9 +119,27 @@ bool UI::CheckEvents()
 
             switch (event.type)
             {
+#ifdef HAVE_LIBSDL3
+            case SDL_EVENT_QUIT:
+#else
             case SDL_QUIT:
+#endif
                 return false;
 
+#ifdef HAVE_LIBSDL3
+            case SDL_EVENT_DROP_FILE:
+                if (GetOption(drive1) != drvFloppy)
+                    Message(MsgType::Warning, "Floppy drive 1 is not present");
+                else if (pFloppy1->Insert(event.drop.data))
+                {
+                    Frame::SetStatus("{}  inserted into drive 1", pFloppy1->DiskFile());
+                    IO::AutoLoad(AutoLoadType::Disk);
+                }
+                // SDL3: event.drop.data is internally managed, no SDL_free needed
+                break;
+
+            case SDL_EVENT_USER:
+#else
             case SDL_DROPFILE:
                 if (GetOption(drive1) != drvFloppy)
                     Message(MsgType::Warning, "Floppy drive 1 is not present");
@@ -128,6 +153,7 @@ bool UI::CheckEvents()
                 break;
 
             case SDL_USEREVENT:
+#endif
             {
                 switch (event.user.code)
                 {
@@ -223,7 +249,12 @@ bool UI::DoAction(Action action, bool pressed)
         {
         case Action::ExitApp:
         {
+#ifdef HAVE_LIBSDL3
+            SDL_Event event = {};
+            event.type = SDL_EVENT_QUIT;
+#else
             SDL_Event event = { SDL_QUIT };
+#endif
             SDL_PushEvent(&event);
             break;
         }

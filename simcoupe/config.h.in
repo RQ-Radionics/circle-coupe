@@ -14,6 +14,9 @@
 // Simple DirectMedia Layer v2.0
 #cmakedefine HAVE_LIBSDL2
 
+// Simple DirectMedia Layer v3.0 (Circle bare-metal)
+#cmakedefine HAVE_LIBSDL3
+
 // OpenGL library.
 #cmakedefine HAVE_OPENGL
 

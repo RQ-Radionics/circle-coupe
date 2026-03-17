@@ -27,6 +27,17 @@
 #include "MIDI.h"
 #include "Options.h"
 
+#ifdef __circle__
+
+// Circle bare-metal: no MIDI hardware support. Provide stub implementations.
+MidiDevice::MidiDevice() {}
+MidiDevice::~MidiDevice() {}
+uint8_t MidiDevice::In(uint16_t /*wPort_*/) { return 0x00; }
+void MidiDevice::Out(uint16_t /*wPort_*/, uint8_t /*bVal_*/) {}
+bool MidiDevice::SetDevice(const std::string& /*dev_path*/) { return false; }
+
+#else // !__circle__
+
 #ifndef MIDIRESET
 #define MIDIRESET       (('M' << 8) | 01)
 #endif
@@ -148,3 +159,5 @@ bool MidiDevice::SetDevice(const std::string& dev_path)
 
     return m_nDevice != -1;
 }
+
+#endif // __circle__

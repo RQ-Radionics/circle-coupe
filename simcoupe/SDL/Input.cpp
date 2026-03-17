@@ -34,12 +34,20 @@
 
 //#define USE_JOYPOLLING
 
+#ifdef HAVE_LIBSDL3
+SDL_JoystickID nJoystick1 = 0, nJoystick2 = 0;
+#else
 int nJoystick1 = -1, nJoystick2 = -1;
+#endif
 SDL_Joystick* pJoystick1, * pJoystick2;
 
 bool fMouseActive, fKeyboardActive;
 int nLastKey, nLastMods;
+#ifdef HAVE_LIBSDL3
+const bool* pKeyStates;
+#else
 const Uint8* pKeyStates;
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -47,6 +55,30 @@ bool Input::Init()
 {
     Exit();
 
+#ifdef HAVE_LIBSDL3
+    // Enumerate joysticks via SDL3 API
+    int nJoysticks = 0;
+    SDL_JoystickID* joysticks = SDL_GetJoysticks(&nJoysticks);
+    if (joysticks)
+    {
+        for (int i = 0; i < nJoysticks; i++)
+        {
+            SDL_JoystickID id = joysticks[i];
+            const char* name = SDL_GetJoystickNameForID(id);
+            if (!name) continue;
+
+            // Ignore VirtualBox devices
+            if (!strncmp(name, "VirtualBox", 10))
+                continue;
+
+            if (!pJoystick1 && (name == GetOption(joydev1) || GetOption(joydev1).empty()))
+                pJoystick1 = SDL_OpenJoystick(nJoystick1 = id);
+            else if (!pJoystick2 && (name == GetOption(joydev2) || GetOption(joydev2).empty()))
+                pJoystick2 = SDL_OpenJoystick(nJoystick2 = id);
+        }
+        SDL_free(joysticks);
+    }
+#else
     // Loop through the available devices for the ones to use (if any)
     for (int i = 0; i < SDL_NumJoysticks(); i++)
     {
@@ -61,16 +93,26 @@ bool Input::Init()
         else if (!pJoystick2 && ((SDL_JoystickNameForIndex(i) == GetOption(joydev2)) || GetOption(joydev2).empty()))
             pJoystick2 = SDL_JoystickOpen(nJoystick2 = i);
     }
+#endif
 
 #ifdef USE_JOYPOLLING
     // Disable joystick events as we'll poll ourselves when necessary
+#ifdef HAVE_LIBSDL3
+    SDL_SetJoystickEventsEnabled(false);
+#else
     SDL_JoystickEventState(SDL_DISABLE);
+#endif
 #endif
 
     Keyboard::Init();
 
+#ifdef HAVE_LIBSDL3
+    SDL_StartTextInput(SDL_GetKeyboardFocus());
+    SDL_SetTextInputArea(SDL_GetKeyboardFocus(), nullptr, 0);
+#else
     SDL_StartTextInput();
     SDL_SetTextInputRect(nullptr);
+#endif
 
     pKeyStates = SDL_GetKeyboardState(nullptr);
 
@@ -81,8 +123,8 @@ bool Input::Init()
 
 void Input::Exit()
 {
-    if (pJoystick1) { SDL_JoystickClose(pJoystick1); pJoystick1 = nullptr; nJoystick1 = -1; }
-    if (pJoystick2) { SDL_JoystickClose(pJoystick2); pJoystick2 = nullptr; nJoystick2 = -1; }
+    if (pJoystick1) { SDL_CloseJoystick(pJoystick1); pJoystick1 = nullptr; nJoystick1 = 0; }
+    if (pJoystick2) { SDL_CloseJoystick(pJoystick2); pJoystick2 = nullptr; nJoystick2 = 0; }
 }
 
 // Return whether the emulation is using the mouse
@@ -98,9 +140,15 @@ void Input::AcquireMouse(bool active)
 
     if (GetOption(mouse))
     {
+#ifdef HAVE_LIBSDL3
+        if (active) SDL_HideCursor(); else SDL_ShowCursor();
+        Video::MouseRelative();
+        SDL_CaptureMouse(active);
+#else
         SDL_ShowCursor(active ? SDL_DISABLE : SDL_ENABLE);
         Video::MouseRelative();
         SDL_CaptureMouse(active ? SDL_TRUE : SDL_FALSE);
+#endif
     }
 
     fMouseActive = active;
@@ -112,12 +160,22 @@ void Input::Purge()
 {
     // Remove queued input messages
     SDL_Event event;
+#ifdef HAVE_LIBSDL3
+    while (SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_EVENT_KEY_DOWN, SDL_EVENT_JOYSTICK_BUTTON_UP));
+#else
     while (SDL_PeepEvents(&event, 1, SDL_GETEVENT, SDL_KEYDOWN, SDL_JOYBUTTONUP));
+#endif
 
     // Discard relative motion and clear the key modifiers
+#ifdef HAVE_LIBSDL3
+    float fx, fy;
+    SDL_GetRelativeMouseState(&fx, &fy);
+    SDL_SetModState(SDL_KMOD_NONE);
+#else
     int n;
     SDL_GetRelativeMouseState(&n, &n);
     SDL_SetModState(KMOD_NONE);
+#endif
 
     Keyboard::Purge();
 }
@@ -133,16 +191,16 @@ static void ReadJoystick(int nJoystick_, SDL_Joystick* pJoystick_, int nToleranc
     int i;
 
     int nDeadZone = 32768 * nTolerance_ / 100;
-    int nButtons = SDL_JoystickNumButtons(pJoystick_);
-    int nHats = SDL_JoystickNumHats(pJoystick_);
-    int nX = SDL_JoystickGetAxis(pJoystick_, 0);
-    int nY = SDL_JoystickGetAxis(pJoystick_, 1);
+    int nButtons = SDL_GetNumJoystickButtons(pJoystick_);
+    int nHats = SDL_GetNumJoystickHats(pJoystick_);
+    int nX = SDL_GetJoystickAxis(pJoystick_, 0);
+    int nY = SDL_GetJoystickAxis(pJoystick_, 1);
 
     for (i = 0; i < nButtons; i++)
-        dwButtons |= SDL_JoystickGetButton(pJoystick_, i) << i;
+        dwButtons |= SDL_GetJoystickButton(pJoystick_, i) << i;
 
     for (i = 0; i < nHats; i++)
-        bHat |= SDL_JoystickGetHat(pJoystick_, i);
+        bHat |= SDL_GetJoystickHat(pJoystick_, i);
 
 
     if ((nX < -nDeadZone) || (bHat & SDL_HAT_LEFT))  nPosition |= HJ_LEFT;
@@ -161,11 +219,20 @@ bool Input::FilterEvent(SDL_Event* pEvent_)
 {
     switch (pEvent_->type)
     {
+#ifdef HAVE_LIBSDL3
+    case SDL_EVENT_TEXT_INPUT:
+#else
     case SDL_TEXTINPUT:
+#endif
     {
         SDL_TextInputEvent* pEvent = &pEvent_->text;
+#ifdef HAVE_LIBSDL3
+        int nChr = pEvent->text[0];
+        auto pbText = reinterpret_cast<const uint8_t*>(pEvent->text);
+#else
         int nChr = pEvent->text[0];
         auto pbText = reinterpret_cast<uint8_t*>(pEvent->text);
+#endif
 
         // Ignore symbols from the keypad
         if ((nLastKey >= HK_KP0 && nLastKey <= HK_KP9) || (nLastKey >= HK_KPPLUS && nLastKey <= HK_KPDECIMAL))
@@ -190,10 +257,30 @@ bool Input::FilterEvent(SDL_Event* pEvent_)
         break;
     }
 
+#ifdef HAVE_LIBSDL3
+    case SDL_EVENT_KEY_DOWN:
+    case SDL_EVENT_KEY_UP:
+#else
     case SDL_KEYDOWN:
     case SDL_KEYUP:
+#endif
     {
         SDL_KeyboardEvent* pEvent = &pEvent_->key;
+
+#ifdef HAVE_LIBSDL3
+        bool fPress = pEvent->down;
+        if (fPress)
+            SDL_HideCursor();
+
+        // Ignore key repeats unless the GUI is active
+        if (pEvent->repeat && !GUI::IsActive())
+            break;
+
+        int nKey = MapKey(pEvent->key);
+        int nMods = ((pEvent->mod & SDL_KMOD_SHIFT) ? HM_SHIFT : 0) |
+            ((pEvent->mod & SDL_KMOD_LCTRL) ? HM_CTRL : 0) |
+            ((pEvent->mod & SDL_KMOD_LALT) ? HM_ALT : 0);
+#else
         SDL_Keysym* pKey = &pEvent->keysym;
 
         bool fPress = pEvent->type == SDL_KEYDOWN;
@@ -208,16 +295,25 @@ bool Input::FilterEvent(SDL_Event* pEvent_)
         int nMods = ((pKey->mod & KMOD_SHIFT) ? HM_SHIFT : 0) |
             ((pKey->mod & KMOD_LCTRL) ? HM_CTRL : 0) |
             ((pKey->mod & KMOD_LALT) ? HM_ALT : 0);
+#endif
 
         int nChr = 0;
         if ((nKey < HK_SPACE) ||
+#ifdef HAVE_LIBSDL3
+            (nKey < HK_MIN && (pEvent->mod & SDL_KMOD_CTRL)) ||
+#else
             (nKey < HK_MIN && (pKey->mod & KMOD_CTRL)) ||
+#endif
             (nKey >= HK_LEFT && nKey != HK_NONE))
         {
             nChr = nKey;
         }
 
+#ifdef HAVE_LIBSDL3
+        TRACE("SDL_KEY{} ({:x} -> {:x})\n", fPress ? "DOWN" : "UP", pEvent->key, nKey);
+#else
         TRACE("SDL_KEY{} ({:x} -> {:x})\n", fPress ? "DOWN" : "UP", pKey->sym, nKey);
+#endif
 
         if (fPress)
         {
@@ -225,9 +321,15 @@ bool Input::FilterEvent(SDL_Event* pEvent_)
             nLastMods = nMods;
         }
 
+#ifdef HAVE_LIBSDL3
+        bool fCtrl = !!(pEvent->mod & SDL_KMOD_CTRL);
+        bool fAlt = !!(pEvent->mod & SDL_KMOD_ALT);
+        bool fShift = !!(pEvent->mod & SDL_KMOD_SHIFT);
+#else
         bool fCtrl = !!(pKey->mod & KMOD_CTRL);
         bool fAlt = !!(pKey->mod & KMOD_ALT);
         bool fShift = !!(pKey->mod & KMOD_SHIFT);
+#endif
 
         // Unpause on key press if paused, so the user doesn't think we've hung
         if (fPress && g_fPaused && nKey != HK_PAUSE)
@@ -297,13 +399,22 @@ bool Input::FilterEvent(SDL_Event* pEvent_)
         break;
     }
 
+#ifdef HAVE_LIBSDL3
+    case SDL_EVENT_MOUSE_MOTION:
+#else
     case SDL_MOUSEMOTION:
+#endif
     {
-        int x = pEvent_->motion.x;
-        int y = pEvent_->motion.y;
+        int x = static_cast<int>(pEvent_->motion.x);
+        int y = static_cast<int>(pEvent_->motion.y);
 
+#ifdef HAVE_LIBSDL3
+        bool hide_cursor = fMouseActive && !GUI::IsActive();
+        if (hide_cursor) SDL_HideCursor(); else SDL_ShowCursor();
+#else
         bool hide_cursor = fMouseActive && !GUI::IsActive();
         SDL_ShowCursor(hide_cursor ? SDL_DISABLE : SDL_ENABLE);
+#endif
 
         // Mouse in use by the GUI?
         if (GUI::IsActive())
@@ -323,13 +434,17 @@ bool Input::FilterEvent(SDL_Event* pEvent_)
         break;
     }
 
+#ifdef HAVE_LIBSDL3
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+#else
     case SDL_MOUSEBUTTONDOWN:
+#endif
     {
         static std::optional<std::chrono::steady_clock::time_point> last_click_time;
         static int nLastButton = -1;
 
-        int x = pEvent_->button.x;
-        int y = pEvent_->button.y;
+        int x = static_cast<int>(pEvent_->button.x);
+        int y = static_cast<int>(pEvent_->button.y);
         auto now = std::chrono::steady_clock::now();
         bool double_click = (pEvent_->button.button == nLastButton) &&
             last_click_time && ((now - *last_click_time) < DOUBLE_CLICK_TIME);
@@ -371,12 +486,16 @@ bool Input::FilterEvent(SDL_Event* pEvent_)
         break;
     }
 
+#ifdef HAVE_LIBSDL3
+    case SDL_EVENT_MOUSE_BUTTON_UP:
+#else
     case SDL_MOUSEBUTTONUP:
+#endif
         // Button presses go to the GUI if it's active
         if (GUI::IsActive())
         {
-            int x = pEvent_->button.x;
-            int y = pEvent_->button.y;
+            int x = static_cast<int>(pEvent_->button.x);
+            int y = static_cast<int>(pEvent_->button.y);
             Video::NativeToSam(x, y);
             GUI::SendMessage(GM_BUTTONUP, x, y);
         }
@@ -387,7 +506,11 @@ bool Input::FilterEvent(SDL_Event* pEvent_)
         }
         break;
 
+#ifdef HAVE_LIBSDL3
+    case SDL_EVENT_MOUSE_WHEEL:
+#else
     case SDL_MOUSEWHEEL:
+#endif
         if (GUI::IsActive())
         {
             if (pEvent_->wheel.y > 0)
@@ -399,7 +522,11 @@ bool Input::FilterEvent(SDL_Event* pEvent_)
 
 #ifndef USE_JOYPOLLING
 
+#ifdef HAVE_LIBSDL3
+    case SDL_EVENT_JOYSTICK_AXIS_MOTION:
+#else
     case SDL_JOYAXISMOTION:
+#endif
     {
         SDL_JoyAxisEvent* p = &pEvent_->jaxis;
         int nJoystick = (p->which == nJoystick1) ? 0 : 1;
@@ -413,7 +540,11 @@ bool Input::FilterEvent(SDL_Event* pEvent_)
         break;
     }
 
+#ifdef HAVE_LIBSDL3
+    case SDL_EVENT_JOYSTICK_HAT_MOTION:
+#else
     case SDL_JOYHATMOTION:
+#endif
     {
         SDL_JoyHatEvent* p = &pEvent_->jhat;
         int nJoystick = (p->which == nJoystick1) ? 0 : 1;
@@ -429,17 +560,33 @@ bool Input::FilterEvent(SDL_Event* pEvent_)
         break;
     }
 
+#ifdef HAVE_LIBSDL3
+    case SDL_EVENT_JOYSTICK_BUTTON_DOWN:
+    case SDL_EVENT_JOYSTICK_BUTTON_UP:
+#else
     case SDL_JOYBUTTONDOWN:
     case SDL_JOYBUTTONUP:
+#endif
     {
         SDL_JoyButtonEvent* p = &pEvent_->jbutton;
         int nJoystick = (p->which == nJoystick1) ? 0 : 1;
 
+#ifdef HAVE_LIBSDL3
+        Joystick::SetButton(nJoystick, p->button, p->down);
+#else
         Joystick::SetButton(nJoystick, p->button, (p->state == SDL_PRESSED));
+#endif
         break;
     }
 #endif
 
+#ifdef HAVE_LIBSDL3
+    case SDL_EVENT_WINDOW_FOCUS_LOST:
+    {
+        AcquireMouse(false);
+        break;
+    }
+#else
     case SDL_WINDOWEVENT:
     {
         if (pEvent_->window.event == SDL_WINDOWEVENT_FOCUS_LOST)
@@ -448,6 +595,7 @@ bool Input::FilterEvent(SDL_Event* pEvent_)
         }
         break;
     }
+#endif
     }
 
     // Allow additional event processing
@@ -462,7 +610,7 @@ void Input::Update()
     if (pJoystick1 || pJoystick2)
     {
         // Update and read the current joystick states
-        SDL_JoystickUpdate();
+        SDL_UpdateJoysticks();
         if (pJoystick1) ReadJoystick(0, pJoystick1, GetOption(deadzone1));
         if (pJoystick2) ReadJoystick(1, pJoystick2, GetOption(deadzone2));
     }
