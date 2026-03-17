@@ -51,7 +51,7 @@
 #endif
 
 
-#ifdef __QNX__
+#if defined(__QNX__) || defined(__circle__)
 #include <strings.h>        // for strcasecmp
 #endif
 

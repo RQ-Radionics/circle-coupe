@@ -99,8 +99,37 @@ private:
     T _res{ invalid };
 };
 
+#ifdef __circle__
+// On Circle bare-metal: FILE* is replaced by FATFS_FILE* backed by FatFs.
+// We typedef FILE to FATFS_FILE so all SimCoupe code that uses FILE* works.
+#include "FatFsFile.h"
+
+// Redefine FILE to FATFS_FILE so function signatures accepting FILE* work.
+// We must #undef FILE first since newlib defines it as a struct in <stdio.h>.
+#undef FILE
+#define FILE FATFS_FILE
+
+struct FILECloser { void operator()(FATFS_FILE* f) { fatfs_file_close(f); } };
+using unique_FILE = unique_resource<FATFS_FILE*, nullptr, FILECloser>;
+// Redirect fopen/fread/etc for SimCoupe code
+#define fopen(p,m)        fatfs_file_open((p),(m))
+#define fclose(f)         fatfs_file_close(f)
+#define fread(b,s,n,f)    fatfs_file_read((b),(s),(n),(f))
+#define fwrite(b,s,n,f)   fatfs_file_write((b),(s),(n),(f))
+#define fseek(f,o,w)      fatfs_file_seek((f),(o),(w))
+#define ftell(f)          fatfs_file_tell(f)
+#define feof(f)           fatfs_file_eof(f)
+#define ferror(f)         fatfs_file_error(f)
+#define rewind(f)         fatfs_file_seek((f),0,0)
+#define fputc(c,f)        fatfs_file_putc((c),(f))
+#define fgetc(f)          fatfs_file_getc(f)
+#define fflush(f)         fatfs_file_flush(f)
+#define fileno(f)         fatfs_file_fileno_save(f)
+#define fstat(fd,st)      fatfs_file_fstat((fd),(st))
+#else
 struct FILECloser { void operator()(FILE* file) { fclose(file); } };
 using unique_FILE = unique_resource<FILE*, nullptr, FILECloser>;
+#endif
 
 
 #ifdef _DEBUG
