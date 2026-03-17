@@ -78,17 +78,27 @@ void *circle_fb_get_buffer(void)
     return base + s_back_buffer * s_height * s_pitch;
 }
 
-/* Flip: wait for vsync, then swap front/back */
+/* Flip: request page flip then wait for vsync to confirm it took effect.
+ *
+ * Order matters: SetVirtualOffset() queues the flip with the GPU; the
+ * VideoCore applies it on the next vertical blank.  WaitForVerticalSync()
+ * then blocks until that blank occurs, guaranteeing the new buffer is
+ * visible before we start overwriting the old one.  Reversing the order
+ * (vsync first, then set offset) causes the SetVirtualOffset to land in
+ * the middle of an active scanout period → visible tearing/flicker.
+ */
 void circle_fb_flip(void)
 {
     if (!s_pFrameBuffer) return;
 
-    /* Show the back buffer */
+    /* Queue the flip: show the back buffer starting from the next vsync */
     unsigned display_y = s_back_buffer * s_height;
-    s_pFrameBuffer->WaitForVerticalSync();
     s_pFrameBuffer->SetVirtualOffset(0, display_y);
 
-    /* Swap */
+    /* Wait until the VideoCore has actually switched to the new buffer */
+    s_pFrameBuffer->WaitForVerticalSync();
+
+    /* Now safe to render into the old front buffer (new back buffer) */
     s_back_buffer ^= 1;
 }
 

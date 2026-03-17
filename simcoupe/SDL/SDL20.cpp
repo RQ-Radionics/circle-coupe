@@ -164,32 +164,52 @@ void SDLTexture::Update(const FrameBuffer& fb)
         int off_x = ((int)fb_w - dst_w) / 2;
         int off_y = ((int)fb_h - dst_h) / 2;
 
-        // Clear framebuffer to black
-        for (unsigned y = 0; y < fb_h; y++) {
+        // Clear border rows (top and bottom) to black only if needed.
+        // Rows covered by the blit are fully overwritten; clearing them
+        // wastes time and widens the window between blit-end and vsync.
+        auto clear_row = [&](unsigned y) {
             uint32_t *row = (uint32_t *)((uint8_t *)fbuf + y * fb_pitch);
-            for (unsigned x = 0; x < fb_w; x++)
-                row[x] = 0;
-        }
+            for (unsigned x = 0; x < fb_w; x++) row[x] = 0;
+        };
+        for (int y = 0; y < off_y; y++)
+            clear_row((unsigned)y);
+        for (int y = off_y + dst_h; y < (int)fb_h; y++)
+            clear_row((unsigned)y);
 
         if (is_gui) {
-            // GUI screen: 1:1 blit (already double-height), clip to framebuffer
+            // GUI screen: 1:1 blit (already double-height), clip to framebuffer.
+            // Each source row covers the full dst_w; clear left/right borders inline.
             for (int y = 0; y < dst_h; y++) {
                 auto pLine = fb.GetLine(y);
-                uint32_t *dst = (uint32_t *)((uint8_t *)fbuf + (off_y + y) * fb_pitch) + off_x;
+                uint32_t *row = (uint32_t *)((uint8_t *)fbuf + (off_y + y) * fb_pitch);
+                // Left border
+                for (int x = 0; x < off_x; x++) row[x] = 0;
+                // Image
+                uint32_t *dst = row + off_x;
                 for (int x = 0; x < dst_w; x++)
                     dst[x] = palette[pLine[x]];
+                // Right border
+                for (int x = off_x + dst_w; x < (int)fb_w; x++) row[x] = 0;
             }
         } else {
-            // Emulator screen: 2x vertical scaling
+            // Emulator screen: 2x vertical scaling.
+            // Each pair of rows is fully overwritten; clear left/right borders inline.
             for (int y = 0; y < src_h && (off_y + y * 2 + 1) < (int)fb_h; y++) {
                 auto pLine = fb.GetLine(y);
-                uint32_t *dst0 = (uint32_t *)((uint8_t *)fbuf + (off_y + y * 2    ) * fb_pitch) + off_x;
-                uint32_t *dst1 = (uint32_t *)((uint8_t *)fbuf + (off_y + y * 2 + 1) * fb_pitch) + off_x;
+                uint32_t *row0 = (uint32_t *)((uint8_t *)fbuf + (off_y + y * 2    ) * fb_pitch);
+                uint32_t *row1 = (uint32_t *)((uint8_t *)fbuf + (off_y + y * 2 + 1) * fb_pitch);
+                // Left border
+                for (int x = 0; x < off_x; x++) { row0[x] = 0; row1[x] = 0; }
+                // Image
+                uint32_t *dst0 = row0 + off_x;
+                uint32_t *dst1 = row1 + off_x;
                 for (int x = 0; x < dst_w; x++) {
                     uint32_t c = palette[pLine[x]];
                     dst0[x] = c;
                     dst1[x] = c;
                 }
+                // Right border
+                for (int x = off_x + dst_w; x < (int)fb_w; x++) { row0[x] = 0; row1[x] = 0; }
             }
         }
 
