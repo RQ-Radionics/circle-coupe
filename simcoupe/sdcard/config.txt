@@ -1,0 +1,31 @@
+# circle-coupe: SimCoupe SAM Coupe emulator on Raspberry Pi 3B
+# Place this file on the FAT32 boot partition of the SD card.
+
+# ---- Boot ----
+# 32-bit kernel (AArch32)
+arm_64bit=0
+# Kernel filename for RPi3 (ARMv8 in 32-bit mode)
+kernel=kernel8-32.img
+
+# ---- Video ----
+# Force HDMI output even if no display detected at boot
+hdmi_force_hotplug=1
+# 720p @ 60Hz (good balance for SAM Coupe 256x192 display)
+hdmi_group=1
+hdmi_mode=4
+
+# ---- Serial debug ----
+# Disable Bluetooth (frees PL011 UART for serial on GPIO 14/15)
+dtoverlay=disable-bt
+# Enable UART (115200 baud on GPIO 14 TX / 15 RX)
+enable_uart=1
+
+# ---- GPU/Memory ----
+# Minimum GPU memory (Circle uses CPU-side framebuffer)
+gpu_mem=64
+
+# ---- Misc ----
+# Disable rainbow splash screen for faster boot
+disable_splash=1
+# No overscan (use full HDMI area)
+disable_overscan=1
