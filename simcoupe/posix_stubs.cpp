@@ -405,3 +405,31 @@ extern "C" int _link(const char *old, const char *newp)
     errno = ENOSYS;
     return -1;
 }
+
+/* ================================================================
+ * circle_dir_* -- type-conflict-free directory listing API
+ * Defined after opendir/readdir to avoid forward reference issues.
+ * ================================================================ */
+
+#include "circle_dir.h"
+
+circle_dir_t circle_dir_open(const char *path)
+{
+    return (circle_dir_t)opendir(path);
+}
+
+int circle_dir_read(circle_dir_t handle, circle_dir_entry_t *entry)
+{
+    if (!handle || !entry) return 0;
+    struct dirent *de = readdir((DIR *)handle);
+    if (!de) return 0;
+    strncpy(entry->name, de->d_name, CIRCLE_DIR_MAXNAME - 1);
+    entry->name[CIRCLE_DIR_MAXNAME - 1] = '\0';
+    entry->is_dir = (de->d_type == DT_DIR) ? 1 : 0;
+    return 1;
+}
+
+void circle_dir_close(circle_dir_t handle)
+{
+    if (handle) closedir((DIR *)handle);
+}

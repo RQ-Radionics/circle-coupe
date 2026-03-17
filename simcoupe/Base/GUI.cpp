@@ -30,6 +30,9 @@
 #include "GUI.h"
 
 #include <ctype.h>
+#ifdef __circle__
+#include "../circle_dir.h"
+#endif
 
 
 #include "Expr.h"
@@ -2155,9 +2158,25 @@ std::string FileView::GetFullPath() const
 // Set a new path to browse
 void FileView::SetPath(const std::string& filepath)
 {
+#ifdef __circle__
+    // Avoid ghc::path entirely -- pure string manipulation
+    auto sep = filepath.rfind('/');
+    std::string filename;
+    if (sep == std::string::npos) {
+        m_path = "";
+        filename = filepath;
+    } else if (sep == 0) {
+        m_path = "/";
+        filename = filepath.substr(1);
+    } else {
+        m_path = filepath.substr(0, sep);
+        filename = filepath.substr(sep + 1);
+    }
+#else
     fs::path path = filepath;
     auto filename = path.filename().string();
     m_path = path.parent_path().string();
+#endif
 
     Refresh();
 
@@ -2217,6 +2236,7 @@ bool FileView::Refresh()
     {
         auto filters = to_set(split(m_pszFilter, ';'));
 
+#ifndef __circle__
         std::error_code error{};
         for (auto& entry : fs::directory_iterator(m_path, error))
         {
@@ -2249,6 +2269,7 @@ bool FileView::Refresh()
 
         if (error)
             return false;
+#endif
 
         // Sort by type (directories first) then filename.
         std::sort(items.begin(), items.end(),

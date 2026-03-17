@@ -2070,6 +2070,19 @@ GHC_INLINE file_status symlink_status_ex(const path& p, std::error_code& ec, uin
         return file_status(file_type::not_found);
     }
     return ec ? file_status(file_type::none) : fs;
+#elif defined(__circle__)
+    // No symlinks on bare-metal -- same as stat
+    (void)sz; (void)nhl; (void)lwt;
+    struct ::stat fs;
+    if (::stat(p.c_str(), &fs) == 0) {
+        ec.clear();
+        return detail::file_status_from_st_mode(fs.st_mode);
+    }
+    ec = detail::make_system_error();
+    if (detail::is_not_found_error(ec)) {
+        return file_status(file_type::not_found, perms::unknown);
+    }
+    return file_status(file_type::none);
 #else
     (void)sz;
     (void)nhl;
@@ -2092,7 +2105,20 @@ GHC_INLINE file_status symlink_status_ex(const path& p, std::error_code& ec, uin
 GHC_INLINE file_status status_ex(const path& p, std::error_code& ec, file_status* sls = nullptr, uintmax_t* sz = nullptr, uintmax_t* nhl = nullptr, time_t* lwt = nullptr, int recurse_count = 0) noexcept
 {
     ec.clear();
-#ifdef GHC_OS_WINDOWS
+#ifdef __circle__
+    // On bare-metal, use stat() only -- no lstat, no symlinks.
+    (void)sls; (void)nhl; (void)lwt; (void)recurse_count;
+    struct ::stat st;
+    if (::stat(p.c_str(), &st) == 0) {
+        if (sz) *sz = (uintmax_t)st.st_size;
+        return detail::file_status_from_st_mode(st.st_mode);
+    }
+    ec = detail::make_system_error();
+    if (detail::is_not_found_error(ec)) {
+        return file_status(file_type::not_found, perms::unknown);
+    }
+    return file_status(file_type::none);
+#elif defined(GHC_OS_WINDOWS)
     if (recurse_count > 16) {
         ec = detail::make_system_error(0x2A9 /*ERROR_STOPPED_ON_SYMLINK*/);
         return file_status(file_type::unknown);
