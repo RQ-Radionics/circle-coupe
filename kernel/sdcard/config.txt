@@ -1,6 +1,14 @@
 # Raspberry Pi 3B config.txt for circle-coupe kernel
 # Place this file on the FAT32 boot partition of the SD card.
 
+# Force 32-bit mode (AArch32) - CRITICAL for kernel8-32.img
+# Without this, RPi3 firmware may boot in AArch64 mode where
+# the load address is 0x80000 instead of 0x8000.
+arm_64bit=0
+
+# Disable turbo during boot (stability)
+initial_turbo=0
+
 # Force HDMI output even if no display detected
 hdmi_force_hotplug=1
 
@@ -8,16 +16,13 @@ hdmi_force_hotplug=1
 hdmi_group=1
 hdmi_mode=4
 
-# Disable Bluetooth (frees UART for serial debug on GPIO 14/15)
+# Disable Bluetooth (frees PL011 UART on GPIO 14/15 for serial debug)
 dtoverlay=disable-bt
 
 # Enable UART (serial debug at 115200 baud on GPIO 14 TX / 15 RX)
 enable_uart=1
 
-# Audio via 3.5mm jack (PWM)
-# dtparam=audio=on  <- not needed for Circle (uses direct PWM)
-
-# GPU memory: minimum (Circle uses CPU-side framebuffer)
+# GPU memory: 64MB for firmware, Circle uses CPU-side framebuffer
 gpu_mem=64
 
 # Disable rainbow splash

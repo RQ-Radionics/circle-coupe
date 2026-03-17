@@ -123,8 +123,8 @@ std::string OSD::MakeFilePath(PathType type, const std::string& filename)
 
     case PathType::Resource:
 #if defined(__circle__)
-        // Resources on SD card root
-        path = "/";
+        // Resources in /simcoupe/ on SD card
+        path = "/simcoupe";
 #elif defined(__APPLE__) && defined(HAVE_LIBSDL2)
         // Resources path in the app bundle
         if (auto pBasePath = SDL_GetBasePath())

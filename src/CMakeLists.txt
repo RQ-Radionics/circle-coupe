@@ -242,7 +242,8 @@ target_compile_definitions(SDL3-circle
         # Fallback dummy backends (referenced in patched SDL_video/audio_circle.c)
         SDL_VIDEO_DRIVER_DUMMY=1
         SDL_AUDIO_DRIVER_DUMMY=1
-        SDL_JOYSTICK_DISABLED=1
+        SDL_JOYSTICK_VIRTUAL=1
+        SDL_JOYSTICK_DUMMY=1
         SDL_HAPTIC_DISABLED=1
         SDL_SENSOR_DISABLED=1
         SDL_CAMERA_DRIVER_DUMMY=1

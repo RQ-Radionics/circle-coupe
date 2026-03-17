@@ -32,10 +32,10 @@ extern void SDL_CIRCLE_PumpEvents(void);
 
 /* ---- Resolution defaults ---- */
 #ifndef CIRCLE_SCREEN_WIDTH
-#define CIRCLE_SCREEN_WIDTH   1280
+#define CIRCLE_SCREEN_WIDTH   640
 #endif
 #ifndef CIRCLE_SCREEN_HEIGHT
-#define CIRCLE_SCREEN_HEIGHT  720
+#define CIRCLE_SCREEN_HEIGHT  480
 #endif
 #define CIRCLE_SCREEN_DEPTH   32   /* ARGB8888 */
 
@@ -54,7 +54,9 @@ static bool CIRCLE_CreateWindowFramebuffer(SDL_VideoDevice *_this,
     SDL_Surface *surface;
     int w, h;
 
-    SDL_GetWindowSizeInPixels(window, &w, &h);
+    /* Use the physical framebuffer size regardless of what the window asked for */
+    w = (int)circle_fb_get_width();
+    h = (int)circle_fb_get_height();
 
     /* Use XRGB8888 for the CPU-side surface (alpha ignored on framebuffer) */
     surface = SDL_CreateSurface(w, h, SDL_PIXELFORMAT_XRGB8888);
@@ -77,7 +79,7 @@ static bool CIRCLE_UpdateWindowFramebuffer(SDL_VideoDevice *_this,
     SDL_Surface *surface;
     void *fb;
     Uint32 fb_pitch;
-    int w, h;
+    int fb_w, fb_h;
 
     surface = (SDL_Surface *)SDL_GetPointerProperty(
         SDL_GetWindowProperties(window), CIRCLE_SURFACE, NULL);
@@ -91,18 +93,19 @@ static bool CIRCLE_UpdateWindowFramebuffer(SDL_VideoDevice *_this,
     }
 
     fb_pitch = circle_fb_get_pitch();
-    SDL_GetWindowSizeInPixels(window, &w, &h);
+    fb_w = (int)circle_fb_get_width();
+    fb_h = (int)circle_fb_get_height();
 
-    /* Copy the SDL surface (CPU-side) to the physical framebuffer.
-     * Both are XRGB8888 so a line-by-line memcpy is sufficient.
-     * For partial updates we copy the full frame - ok for 720p at 50fps. */
+    /* Copy the SDL surface to the physical framebuffer.
+     * Both are XRGB8888; use min dimensions to avoid overrun. */
     {
         const Uint8 *src = (const Uint8 *)surface->pixels;
         Uint8 *dst = (Uint8 *)fb;
         int row;
+        int copy_h = surface->h < fb_h ? surface->h : fb_h;
         Uint32 copy_pitch = (Uint32)surface->pitch < fb_pitch
                             ? (Uint32)surface->pitch : fb_pitch;
-        for (row = 0; row < h; row++) {
+        for (row = 0; row < copy_h; row++) {
             SDL_memcpy(dst, src, copy_pitch);
             src += surface->pitch;
             dst += fb_pitch;
@@ -134,15 +137,36 @@ static void CIRCLE_PumpEvents(SDL_VideoDevice *_this)
 
 static bool CIRCLE_SetWindowPosition(SDL_VideoDevice *_this, SDL_Window *window)
 {
-    SDL_SendWindowEvent(window, SDL_EVENT_WINDOW_MOVED,
-                        window->pending.x, window->pending.y);
+    SDL_SendWindowEvent(window, SDL_EVENT_WINDOW_MOVED, 0, 0);
     return true;
 }
 
 static void CIRCLE_SetWindowSize(SDL_VideoDevice *_this, SDL_Window *window)
 {
-    SDL_SendWindowEvent(window, SDL_EVENT_WINDOW_RESIZED,
-                        window->pending.w, window->pending.h);
+    /* Always report the physical framebuffer size */
+    int w = (int)circle_fb_get_width();
+    int h = (int)circle_fb_get_height();
+    SDL_SendWindowEvent(window, SDL_EVENT_WINDOW_RESIZED, w, h);
+}
+
+static bool CIRCLE_CreateSDLWindow(SDL_VideoDevice *_this, SDL_Window *window, SDL_PropertiesID props)
+{
+    /* Override the requested size to match the physical framebuffer.
+     * Set internal fields directly to avoid PIXEL_SIZE_CHANGED which
+     * invalidates the window surface before it's even created. */
+    int w = (int)circle_fb_get_width();
+    int h = (int)circle_fb_get_height();
+    window->x = 0;
+    window->y = 0;
+    window->w = w;
+    window->h = h;
+    window->last_pixel_w = w;
+    window->last_pixel_h = h;
+
+    /* On bare-metal there is only one window -- give it keyboard focus immediately */
+    SDL_SetKeyboardFocus(window);
+
+    return true;
 }
 
 /* ------------------------------------------------------------------ */
@@ -206,6 +230,7 @@ static SDL_VideoDevice *CIRCLE_CreateDevice(void)
     device->VideoInit                  = CIRCLE_VideoInit;
     device->VideoQuit                  = CIRCLE_VideoQuit;
     device->PumpEvents                 = CIRCLE_PumpEvents;
+    device->CreateSDLWindow            = CIRCLE_CreateSDLWindow;
     device->SetWindowPosition          = CIRCLE_SetWindowPosition;
     device->SetWindowSize              = CIRCLE_SetWindowSize;
     device->CreateWindowFramebuffer    = CIRCLE_CreateWindowFramebuffer;

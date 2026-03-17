@@ -28,6 +28,13 @@
 
 #if defined(HAVE_LIBSDL2) || defined(HAVE_LIBSDL3)
 
+#ifdef __circle__
+extern "C" unsigned circle_fb_get_width(void);
+extern "C" unsigned circle_fb_get_height(void);
+extern "C" unsigned circle_fb_get_pitch(void);
+extern "C" void    *circle_fb_get_buffer(void);
+#endif
+
 static uint32_t aulPalette[NUM_PALETTE_COLOURS];
 
 SDLTexture::SDLTexture()
@@ -48,7 +55,12 @@ Rect SDLTexture::DisplayRect() const
 
 bool SDLTexture::Init()
 {
-#ifdef HAVE_LIBSDL3
+#ifdef __circle__
+    /* On bare-metal, use framebuffer size directly, no hidden/resize */
+    int fb_w = (int)circle_fb_get_width();
+    int fb_h = (int)circle_fb_get_height();
+    m_window = SDL_CreateWindow("SimCoupe/SDL", fb_w, fb_h, 0);
+#elif defined(HAVE_LIBSDL3)
     SDL_WindowFlags window_flags = SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE;
     m_window = SDL_CreateWindow(
         "SimCoupe/SDL",
@@ -62,10 +74,12 @@ bool SDLTexture::Init()
     if (!m_window)
         return false;
 
+#ifndef __circle__
     SDL_SetWindowMinimumSize(m_window, Frame::Width() / 2, Frame::Height() / 2);
+#endif
 
 #ifdef HAVE_LIBSDL3
-    m_renderer.reset(SDL_CreateRenderer(m_window, nullptr));
+    m_renderer.reset(SDL_CreateRenderer(m_window, "software"));
 #else
     m_renderer.reset(
         SDL_CreateRenderer(m_window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_TARGETTEXTURE));
@@ -89,8 +103,10 @@ bool SDLTexture::Init()
     SDL_SetWindowTitle(m_window, caption.c_str());
 
     OptionsChanged();
+#ifndef __circle__
     RestoreWindowPosition();
     SDL_ShowWindow(m_window);
+#endif
 
     return true;
 }
@@ -107,6 +123,62 @@ void SDLTexture::OptionsChanged()
 
 void SDLTexture::Update(const FrameBuffer& fb)
 {
+#ifdef __circle__
+    // Bypass SDL render pipeline -- blit directly to Circle framebuffer.
+    // Build XRGB8888 palette directly from IO::Palette() (no texture needed).
+    {
+        void *fbuf = circle_fb_get_buffer();
+        if (!fbuf) return;
+
+        // Build local XRGB8888 palette from SAM hardware palette
+        uint32_t palette[NUM_PALETTE_COLOURS];
+        auto hw_palette = IO::Palette();
+        for (size_t i = 0; i < hw_palette.size(); i++) {
+            auto& c = hw_palette[i];
+            palette[i] = (0xFF << 24) |
+                         ((uint32_t)c.red   << 16) |
+                         ((uint32_t)c.green <<  8) |
+                          (uint32_t)c.blue;
+        }
+
+        unsigned fb_pitch = circle_fb_get_pitch();
+        unsigned fb_w = circle_fb_get_width();
+        unsigned fb_h = circle_fb_get_height();
+
+        int src_w = fb.Width();
+        int src_h = fb.Height();
+
+        // Scale to fill framebuffer, maintaining aspect ratio (2x vertical for SAM 192-line output)
+        int dst_h = src_h * 2;
+        int dst_w = src_w;
+        if (dst_h > (int)fb_h) dst_h = (int)fb_h;
+        if (dst_w > (int)fb_w) dst_w = (int)fb_w;
+
+        // Centre on framebuffer
+        int off_x = ((int)fb_w - dst_w) / 2;
+        int off_y = ((int)fb_h - dst_h) / 2;
+
+        // Clear framebuffer to black
+        for (unsigned y = 0; y < fb_h; y++) {
+            uint32_t *row = (uint32_t *)((uint8_t *)fbuf + y * fb_pitch);
+            for (unsigned x = 0; x < fb_w; x++)
+                row[x] = 0;
+        }
+
+        // Blit with vertical 2x scaling
+        for (int y = 0; y < src_h && (y * 2 + 1) < (int)fb_h; y++) {
+            auto pLine = fb.GetLine(y);
+            uint32_t *dst0 = (uint32_t *)((uint8_t *)fbuf + (off_y + y * 2    ) * fb_pitch) + off_x;
+            uint32_t *dst1 = (uint32_t *)((uint8_t *)fbuf + (off_y + y * 2 + 1) * fb_pitch) + off_x;
+            for (int x = 0; x < dst_w; x++) {
+                uint32_t c = palette[pLine[x]];
+                dst0[x] = c;
+                dst1[x] = c;
+            }
+        }
+    }
+    return;
+#endif
     if (DrawChanges(fb))
         Render();
 }

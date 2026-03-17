@@ -30,6 +30,8 @@
 #include "Util.h"
 
 #include "CPU.h"
+#include "Frame.h"
+#include "GUI.h"
 #include "Memory.h"
 #include "Main.h"
 #include "Options.h"

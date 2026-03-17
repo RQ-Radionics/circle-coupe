@@ -20,6 +20,35 @@
 
 #include "SimCoupe.h"
 
+#ifdef __circle__
+extern "C" void *circle_fb_get_buffer(void);
+extern "C" unsigned circle_fb_get_pitch(void);
+extern "C" unsigned circle_fb_get_width(void);
+extern "C" unsigned circle_fb_get_height(void);
+
+static void dbg_paint_scancode(unsigned scancode)
+{
+    // Paint a white bar whose width = scancode value at the bottom of screen
+    void *fb = circle_fb_get_buffer();
+    if (!fb) return;
+    unsigned pitch = circle_fb_get_pitch();
+    unsigned fb_w   = circle_fb_get_width();
+    unsigned fb_h   = circle_fb_get_height();
+
+    // Clear bottom 20 rows to black
+    for (unsigned y = fb_h - 20; y < fb_h; y++) {
+        uint32_t *row = (uint32_t *)((uint8_t *)fb + y * pitch);
+        for (unsigned x = 0; x < fb_w; x++) row[x] = 0;
+    }
+    // Paint white bar of width = scancode (capped at fb_w)
+    unsigned bar_w = scancode < fb_w ? scancode : fb_w;
+    for (unsigned y = fb_h - 20; y < fb_h; y++) {
+        uint32_t *row = (uint32_t *)((uint8_t *)fb + y * pitch);
+        for (unsigned x = 0; x < bar_w; x++) row[x] = 0x00FFFFFF;
+    }
+}
+#endif
+
 #include "Actions.h"
 #include "Frame.h"
 #include "GUI.h"
@@ -268,9 +297,16 @@ bool Input::FilterEvent(SDL_Event* pEvent_)
         SDL_KeyboardEvent* pEvent = &pEvent_->key;
 
 #ifdef HAVE_LIBSDL3
+
+
         bool fPress = pEvent->down;
         if (fPress)
             SDL_HideCursor();
+
+#ifdef __circle__
+        if (fPress)
+            dbg_paint_scancode((unsigned)pEvent->scancode);
+#endif
 
         // Ignore key repeats unless the GUI is active
         if (pEvent->repeat && !GUI::IsActive())
@@ -709,3 +745,93 @@ int Input::MapKey(int nKey_)
 
     return (nKey_ && nKey_ < HK_MIN) ? nKey_ : HK_NONE;
 }
+
+#ifdef __circle__
+// USB HID scancode -> HK_ constant (same values as SDL scancodes)
+// Called directly from kernel.cpp USB handler, bypassing SDL event queue.
+static int HKFromUsbHid(unsigned hid)
+{
+    // USB HID scancodes match SDL scancodes which MapKey() converts via SDLK.
+    // We map USB HID directly to HK_ here.
+    switch (hid) {
+    // Letters a-z: HID 4-29
+    case 4: return 'a'; case 5: return 'b'; case 6: return 'c';
+    case 7: return 'd'; case 8: return 'e'; case 9: return 'f';
+    case 10: return 'g'; case 11: return 'h'; case 12: return 'i';
+    case 13: return 'j'; case 14: return 'k'; case 15: return 'l';
+    case 16: return 'm'; case 17: return 'n'; case 18: return 'o';
+    case 19: return 'p'; case 20: return 'q'; case 21: return 'r';
+    case 22: return 's'; case 23: return 't'; case 24: return 'u';
+    case 25: return 'v'; case 26: return 'w'; case 27: return 'x';
+    case 28: return 'y'; case 29: return 'z';
+    // Numbers 1-0: HID 30-39
+    case 30: return '1'; case 31: return '2'; case 32: return '3';
+    case 33: return '4'; case 34: return '5'; case 35: return '6';
+    case 36: return '7'; case 37: return '8'; case 38: return '9';
+    case 39: return '0';
+    // Special keys
+    case 40: return HK_RETURN;
+    case 41: return HK_ESC;
+    case 42: return HK_BACKSPACE;
+    case 43: return HK_TAB;
+    case 44: return HK_SPACE;
+    case 45: return '-';
+    case 46: return '=';
+    case 47: return '[';
+    case 48: return ']';
+    case 49: return '\\';
+    case 51: return ';';
+    case 52: return '\'';
+    case 53: return '`';
+    case 54: return ',';
+    case 55: return '.';
+    case 56: return '/';
+    case 57: return HK_CAPSLOCK;
+    // F keys: HID 58-69
+    case 58: return HK_F1;  case 59: return HK_F2;  case 60: return HK_F3;
+    case 61: return HK_F4;  case 62: return HK_F5;  case 63: return HK_F6;
+    case 64: return HK_F7;  case 65: return HK_F8;  case 66: return HK_F9;
+    case 67: return HK_F10; case 68: return HK_F11; case 69: return HK_F12;
+    // Navigation
+    case 73: return HK_INSERT;  case 74: return HK_HOME;
+    case 75: return HK_PGUP;    case 76: return HK_DELETE;
+    case 77: return HK_END;     case 78: return HK_PGDN;
+    case 79: return HK_RIGHT;   case 80: return HK_LEFT;
+    case 81: return HK_DOWN;    case 82: return HK_UP;
+    // Modifiers: HID 224-231
+    case 224: return HK_LCTRL;  case 225: return HK_LSHIFT;
+    case 226: return HK_LALT;   case 228: return HK_RCTRL;
+    case 229: return HK_RSHIFT; case 230: return HK_RALT;
+    }
+    return HK_NONE;
+}
+
+extern "C" void circle_simcoupe_key(unsigned hid_scancode, int pressed,
+                                     int mod_shift, int mod_ctrl, int mod_alt)
+{
+
+    int nKey = HKFromUsbHid(hid_scancode);
+    if (nKey == HK_NONE) return;
+
+    bool fPress = (pressed != 0);
+    int nMods = (mod_shift ? HM_SHIFT : 0) |
+                (mod_ctrl  ? HM_CTRL  : 0) |
+                (mod_alt   ? HM_ALT   : 0);
+
+    if (GUI::IsActive()) {
+        // GUI is active: send key events directly to the GUI
+        if (fPress) {
+            GUI::SendMessage(GM_CHAR, nKey, nMods);
+        }
+        return;
+    }
+
+    if (nKey >= HK_F1 && nKey <= HK_F12) {
+        Actions::Key(nKey - HK_F1 + 1, fPress,
+                     mod_ctrl != 0, mod_alt != 0, mod_shift != 0);
+        Keyboard::SetKey(nKey, fPress, nMods);
+    } else {
+        Keyboard::SetKey(nKey, fPress, nMods);
+    }
+}
+#endif // __circle__

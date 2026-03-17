@@ -117,8 +117,8 @@
 #define SDL_AUDIO_DRIVER_DUMMY  1   /* fallback */
 
 /* ---- Input/Joystick: via Circle USB (handled through events) ---- */
+/* NOTE: SDL3 uses #ifndef SDL_JOYSTICK_DISABLED, so do NOT define it as 0 */
 #define SDL_JOYSTICK_VIRTUAL    1
-#define SDL_JOYSTICK_DISABLED   0
 
 /* ---- Disabled subsystems ---- */
 #define SDL_HAPTIC_DISABLED     1

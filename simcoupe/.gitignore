@@ -12,3 +12,15 @@ Thumbs.db
 /SimCoupe-*
 /build_*
 /Demos
+
+# Circle bare-metal build artifacts
+*.d
+*.o
+*.elf
+*.img
+*.lst
+*.map
+config.h
+Extern/fmt
+Extern/libspectrum
+Extern/z80

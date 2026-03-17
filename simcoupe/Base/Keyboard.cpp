@@ -21,6 +21,8 @@
 #include "SimCoupe.h"
 #include "Keyboard.h"
 
+
+
 #include "Input.h"
 #include "Joystick.h"
 #include "Keyin.h"
@@ -411,6 +413,8 @@ void SetKey(int nCode_, bool fPressed_, int nMods_/*=0*/, int nChar_/*=0*/)
     {
         // Press the key code
         PressKey(nCode_);
+
+
 
         // If a character was supplied (non-Win32), update the mapping entries
         if (nChar_)

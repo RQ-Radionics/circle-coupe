@@ -31,6 +31,10 @@
 #include "Video.h"
 
 
+
+
+
+
 extern "C" int main(int argc_, char* argv_[])
 {
     if (Main::Init(argc_, argv_))
@@ -52,7 +56,8 @@ bool Init(int argc_, char* argv_[])
     if (!Options::Load(argc_, argv_))
         return false;
 
-    return OSD::Init() && Frame::Init() && CPU::Init(true) && UI::Init() && Sound::Init() && Input::Init() && Video::Init();
+    return OSD::Init() && Frame::Init() && CPU::Init(true) && UI::Init() &&
+           Sound::Init() && Input::Init() && Video::Init();
 }
 
 void Exit()

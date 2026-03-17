@@ -328,7 +328,25 @@ void Sync()
     }
     else
     {
+#ifdef __circle__
+        // On bare-metal, Sound::FrameUpdate() does not throttle.
+        // Limit rendering to ACTUAL_FRAMES_PER_SECOND (50fps).
+        static high_resolution_clock::time_point last_frame;
+        static bool initialized = false;
+        if (!initialized) {
+            last_frame = now;
+            initialized = true;
+            draw_frame = true;
+        } else {
+            auto frame_duration = duration_cast<high_resolution_clock::duration>(
+                seconds(1)) / ACTUAL_FRAMES_PER_SECOND;
+            draw_frame = (now - last_frame) >= frame_duration;
+            if (draw_frame)
+                last_frame += duration_cast<high_resolution_clock::duration>(frame_duration);
+        }
+#else
         draw_frame = true;
+#endif
     }
 
     static int num_frames;

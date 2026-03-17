@@ -10,7 +10,7 @@ kernel=kernel8-32.img
 # ---- Video ----
 # Force HDMI output even if no display detected at boot
 hdmi_force_hotplug=1
-# 720p @ 60Hz (good balance for SAM Coupe 256x192 display)
+# 720p @ 60Hz
 hdmi_group=1
 hdmi_mode=4
 

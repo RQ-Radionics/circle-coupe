@@ -3592,6 +3592,13 @@ static bool ShouldAttemptTextureFramebuffer(void)
     const char *hint;
     bool attempt_texture_framebuffer;
 
+#ifdef SDL_VIDEO_DRIVER_CIRCLE
+    /* Circle driver provides a direct framebuffer. Never use the texture
+     * framebuffer path -- it creates a hidden renderer that conflicts
+     * with the application's own SDL_CreateRenderer call. */
+    return false;
+#endif
+
     // If the driver doesn't support window framebuffers, always use the render API.
     if (!_this->CreateWindowFramebuffer) {
         return true;
@@ -3737,10 +3744,13 @@ bool SDL_UpdateWindowSurfaceRects(SDL_Window *window, const SDL_Rect *rects,
     CHECK_WINDOW_MAGIC(window, false);
 
     if (!window->surface_valid) {
-        return SDL_SetError("Window surface is invalid, please call SDL_GetWindowSurface() to get a new surface");
+        SDL_Surface *surface = SDL_GetWindowSurface(window);
+        if (!surface || !window->surface_valid) {
+            return SDL_SetError("Window surface is invalid, please call SDL_GetWindowSurface() to get a new surface");
+        }
     }
 
-    SDL_assert(_this->checked_texture_framebuffer); // we should have done this before we had a valid surface.
+    SDL_assert(_this->checked_texture_framebuffer);
 
     return _this->UpdateWindowFramebuffer(_this, window, rects, numrects);
 }

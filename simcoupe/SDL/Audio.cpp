@@ -71,7 +71,9 @@ float Audio::AddData(uint8_t* pData_, int len_bytes)
     auto buffer_frames = std::max(GetOption(latency), MIN_LATENCY_FRAMES);
     int buffer_size = SAMPLES_PER_FRAME * buffer_frames * BYTES_PER_SAMPLE;
 
-#if 1
+#ifndef __circle__
+    // On bare-metal the audio stream may never drain if the audio callback
+    // is not firing. Skip this blocking wait entirely.
     while (SDL_GetAudioStreamQueued(stream) >= buffer_size)
     {
         SDL_Delay(1);

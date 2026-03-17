@@ -4,9 +4,8 @@
  * C++ glue between SDL3 Circle video backend and CBcmFrameBuffer.
  * Exposes extern "C" functions called by SDL_circlevideo.c.
  *
- * Circle CBcmFrameBuffer allocates its buffer via the VideoCore GPU mailbox.
- * GetBuffer() returns a physical address that is also bus-accessible ARM memory.
- * On RPi3B with AArch32 this is a direct virtual=physical mapping.
+ * No CScreenDevice exists -- SDL owns the display exclusively.
+ * CBcmFrameBuffer allocates via the VideoCore GPU mailbox.
  */
 
 #include <stdint.h>
@@ -26,7 +25,7 @@ int circle_fb_init(unsigned w, unsigned h, unsigned depth)
     s_pFrameBuffer = new CBcmFrameBuffer(w, h, depth,
                                           w, h,   /* virtual = physical */
                                           0,       /* display 0 (HDMI) */
-                                          FALSE);  /* no double buffering yet */
+                                          FALSE);  /* no double buffering */
     if (!s_pFrameBuffer->Initialize()) {
         delete s_pFrameBuffer;
         s_pFrameBuffer = nullptr;
@@ -69,17 +68,13 @@ void *circle_fb_get_buffer(void)
     if (!s_pFrameBuffer) {
         return nullptr;
     }
-    /* GetBuffer() returns the physical/bus address of the framebuffer.
-     * On RPi 3B AArch32 with identity mapping this is the same as the
-     * virtual address we can write to directly. */
     return reinterpret_cast<void *>(
         static_cast<uintptr_t>(s_pFrameBuffer->GetBuffer()));
 }
 
 void circle_fb_update(void)
 {
-    /* Single-buffered: nothing to swap.
-     * When double-buffering is added, call SetVirtualOffset here. */
+    /* Single-buffered: nothing to swap. */
 }
 
 } /* extern "C" */

@@ -53,7 +53,7 @@ bool UI::Init(bool fFirstInit_/*=false*/)
 #endif
 
     // To help on platforms without a native GUI, we'll display a one-time welcome message
-#if !defined(__APPLE__) && !defined(_WINDOWS)
+#if !defined(__APPLE__) && !defined(_WINDOWS) && !defined(__circle__)
     if (GetOption(firstrun))
     {
         // Clear the option so we don't show it again

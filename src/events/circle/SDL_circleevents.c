@@ -59,6 +59,11 @@ static void inject_mouse_wheel(int dy, unsigned long long ts)
 
 void SDL_CIRCLE_InitEvents(void)
 {
+    /* Set callbacks immediately so kernel USB handler can use them right away */
+    circle_input_pump(inject_key,
+                      inject_mouse_motion,
+                      inject_mouse_button,
+                      inject_mouse_wheel);
     circle_input_init();
 }
 
@@ -77,6 +82,9 @@ void SDL_CIRCLE_PumpEvents(void)
                       inject_mouse_motion,
                       inject_mouse_button,
                       inject_mouse_wheel);
+
+#ifdef SDL_VIDEO_DRIVER_CIRCLE
+#endif
 }
 
 #endif /* SDL_VIDEO_DRIVER_CIRCLE */

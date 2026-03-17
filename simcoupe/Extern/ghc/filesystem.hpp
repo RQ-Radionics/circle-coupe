@@ -49,6 +49,12 @@
 #ifndef GHC_OS_DETECTED
 #if defined(__APPLE__) && defined(__MACH__)
 #define GHC_OS_MACOS
+#elif defined(SDL_PLATFORM_CIRCLE) || defined(__circle__)
+/* circle-coupe: Circle bare-metal on Raspberry Pi 3B.
+ * POSIX layer provided by src/fatfs_posix.cpp over FatFs.
+ * Patch applied by scripts/patch-sdl3.sh */
+#define GHC_OS_CIRCLE
+#define GHC_OS_LINUX   /* reuse Linux POSIX paths in ghc::filesystem impl */
 #elif defined(__linux__)
 #define GHC_OS_LINUX
 #if defined(__ANDROID__)
@@ -109,7 +115,9 @@
 #else
 #include <dirent.h>
 #include <fcntl.h>
+#ifndef GHC_OS_CIRCLE
 #include <sys/param.h>
+#endif
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -123,9 +131,15 @@
 #include <sys/vfs.h>
 #define statvfs statfs
 #else
+#ifndef GHC_OS_CIRCLE
 #include <sys/statvfs.h>
+#else
+/* circle-coupe: no statvfs on bare-metal newlib - provide minimal stub */
+struct statvfs { unsigned long f_bsize; unsigned long long f_blocks; unsigned long long f_bfree; unsigned long long f_bavail; };
+static inline int statvfs(const char*, struct statvfs* s) { if(s) { s->f_bsize=512; s->f_blocks=s->f_bfree=s->f_bavail=0; } return 0; }
 #endif
-#if !defined(__ANDROID__) || __ANDROID_API__ >= 26
+#endif
+#if (!defined(__ANDROID__) || __ANDROID_API__ >= 26) && !defined(GHC_OS_CIRCLE)
 #include <langinfo.h>
 #endif
 #endif
@@ -1724,6 +1738,17 @@ GHC_INLINE bool equals_simple_insensitive(const char* str1, const char* str2)
     return 0 == ::strcasecmp(str1, str2);
 #endif
 }
+/* circle-coupe: provide strcasecmp if missing from bare-metal newlib */
+#ifdef GHC_OS_CIRCLE
+static inline int strcasecmp(const char* a, const char* b) {
+    while (*a && *b) {
+        int d = ((*a | 32) - (*b | 32));
+        if (d) return d;
+        a++; b++;
+    }
+    return *a - *b;
+}
+#endif
 
 GHC_INLINE const char* strerror_adapter(char* gnu, char*)
 {
@@ -4183,6 +4208,10 @@ GHC_INLINE void last_write_time(const path& p, file_time_type new_time, std::err
     return;
 #endif
 #endif
+#elif defined(GHC_OS_CIRCLE)
+    /* circle-coupe: FatFs has no utimensat - silently ignore timestamp changes */
+    (void)d;
+    return;
 #else
 #ifndef UTIME_OMIT
 #define UTIME_OMIT ((1l << 30) - 2l)
@@ -4491,6 +4520,10 @@ GHC_INLINE void resize_file(const path& p, uintmax_t size, std::error_code& ec) 
     else if (SetFilePointerEx(file.get(), lisize, NULL, FILE_BEGIN) == 0 || SetEndOfFile(file.get()) == 0) {
         ec = detail::make_system_error();
     }
+#elif defined(GHC_OS_CIRCLE)
+    /* circle-coupe: FatFs has f_truncate but only on open file; stub for now */
+    (void)size; (void)p;
+    ec = std::make_error_code(std::errc::not_supported);
 #else
     if (::truncate(p.c_str(), static_cast<off_t>(size)) != 0) {
         ec = detail::make_system_error();
@@ -4528,7 +4561,11 @@ GHC_INLINE space_info space(const path& p, std::error_code& ec) noexcept
         ec = detail::make_system_error();
         return {static_cast<uintmax_t>(-1), static_cast<uintmax_t>(-1), static_cast<uintmax_t>(-1)};
     }
+#ifdef GHC_OS_CIRCLE
+    return {static_cast<uintmax_t>(sfs.f_blocks * sfs.f_bsize), static_cast<uintmax_t>(sfs.f_bfree * sfs.f_bsize), static_cast<uintmax_t>(sfs.f_bavail * sfs.f_bsize)};
+#else
     return {static_cast<uintmax_t>(sfs.f_blocks * sfs.f_frsize), static_cast<uintmax_t>(sfs.f_bfree * sfs.f_frsize), static_cast<uintmax_t>(sfs.f_bavail * sfs.f_frsize)};
+#endif
 #endif
 }
 
