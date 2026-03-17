@@ -33,6 +33,7 @@ extern "C" unsigned circle_fb_get_width(void);
 extern "C" unsigned circle_fb_get_height(void);
 extern "C" unsigned circle_fb_get_pitch(void);
 extern "C" void    *circle_fb_get_buffer(void);
+extern "C" void     circle_fb_flip(void);
 #endif
 
 static uint32_t aulPalette[NUM_PALETTE_COLOURS];
@@ -191,6 +192,9 @@ void SDLTexture::Update(const FrameBuffer& fb)
                 }
             }
         }
+
+        // Flip double buffer: show the back buffer we just rendered into.
+        circle_fb_flip();
     }
     return;
 #endif

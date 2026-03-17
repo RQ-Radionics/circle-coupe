@@ -112,6 +112,9 @@ static bool CIRCLE_UpdateWindowFramebuffer(SDL_VideoDevice *_this,
         }
     }
 
+    /* Flip the double buffer so the just-rendered frame becomes visible. */
+    circle_fb_update();
+
     return true;
 }
 
