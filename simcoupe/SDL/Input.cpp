@@ -653,7 +653,8 @@ void Input::Update()
         int fn = s_pending_fn;
         bool ctrl = s_pending_ctrl, alt = s_pending_alt, shift = s_pending_shift;
         s_pending_fn = 0;
-        Actions::Key(fn, true, ctrl, alt, shift);
+        Actions::Key(fn, true,  ctrl, alt, shift);  // press
+        Actions::Key(fn, false, ctrl, alt, shift);  // release - needed so reset_asserted is cleared
     }
 #endif
 

@@ -102,6 +102,22 @@ void circle_fb_flip(void)
     s_back_buffer ^= 1;
 }
 
+/* Flip without blocking on vsync.
+ *
+ * Used when the GUI/debugger is active on bare-metal.  WaitForVerticalSync()
+ * holds the sole RPi3 core for ~20ms, during which Circle's scheduler cannot
+ * run USB callbacks → keyboard input is lost and the debugger appears frozen.
+ * Without the wait the flip still takes effect on the next natural vsync;
+ * occasional tearing in the debugger UI is acceptable.
+ */
+void circle_fb_flip_nowait(void)
+{
+    if (!s_pFrameBuffer) return;
+    unsigned display_y = s_back_buffer * s_height;
+    s_pFrameBuffer->SetVirtualOffset(0, display_y);
+    s_back_buffer ^= 1;
+}
+
 void circle_fb_update(void)
 {
     circle_fb_flip();

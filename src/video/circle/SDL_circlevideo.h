@@ -24,5 +24,6 @@ extern unsigned circle_fb_get_pitch(void);
 extern unsigned circle_fb_get_depth(void);
 extern void    *circle_fb_get_buffer(void);
 extern void     circle_fb_update(void);
+extern void     circle_fb_flip_nowait(void);
 
 #endif /* SDL_circlevideo_h_ */

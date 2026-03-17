@@ -34,6 +34,7 @@ extern "C" unsigned circle_fb_get_height(void);
 extern "C" unsigned circle_fb_get_pitch(void);
 extern "C" void    *circle_fb_get_buffer(void);
 extern "C" void     circle_fb_flip(void);
+extern "C" void     circle_fb_flip_nowait(void);
 #endif
 
 static uint32_t aulPalette[NUM_PALETTE_COLOURS];
@@ -214,7 +215,13 @@ void SDLTexture::Update(const FrameBuffer& fb)
         }
 
         // Flip double buffer: show the back buffer we just rendered into.
-        circle_fb_flip();
+        // When the GUI/debugger is active use the non-blocking variant so that
+        // WaitForVerticalSync() does not hold the sole RPi3 core for ~20ms and
+        // starve Circle's USB scheduler of CPU time (which would freeze input).
+        if (is_gui)
+            circle_fb_flip_nowait();
+        else
+            circle_fb_flip();
     }
     return;
 #endif

@@ -33,6 +33,14 @@
 #include "Options.h"
 #include "Sound.h"
 #include "SDL20.h"
+#ifdef __circle__
+// Include Circle scheduler after SimCoupe headers to avoid TRUE/FALSE redefinition warnings.
+// Suppress with explicit undef/redef around the include.
+#undef TRUE
+#undef FALSE
+#include <circle/sched/scheduler.h>
+#include "Debug.h"
+#endif
 #ifndef HAVE_LIBSDL3
 #include "SDL20_GL3.h"
 #endif
@@ -108,6 +116,17 @@ bool UI::CheckEvents()
     // If the GUI is active the input won't be polled by CPU.cpp, so do it here
     if (GUI::IsActive())
         Input::Update();
+
+#ifdef __circle__
+    // On bare-metal, yield to the Circle scheduler so USB interrupt callbacks
+    // can run and queue keyboard/mouse events.  This is especially critical
+    // when the debugger is active (Debug::IsActive()) because ExecuteChunk()
+    // is skipped, so there is no natural yield from the Z80 execution loop.
+    // Without this, WaitForVerticalSync() or tight spin loops can starve the
+    // USB host driver and make the UI appear completely frozen.
+    if (CScheduler::IsActive())
+        CScheduler::Get()->Yield();
+#endif
 
     while (1)
     {
