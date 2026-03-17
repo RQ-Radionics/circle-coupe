@@ -2096,6 +2096,27 @@ void FileView::NotifyParent(int nParam_)
         // Double-clicking to open a directory?
         if (std::addressof(pItem->m_pIcon.get()) == std::addressof(sFolderIcon))
         {
+#ifdef __circle__
+            // Avoid ghc::path -- pure string manipulation
+            std::string prev_path = m_path;
+            if (pItem->m_label == "..") {
+                auto sep = m_path.rfind('/');
+                if (sep == std::string::npos || sep == 0)
+                    m_path = "";
+                else
+                    m_path = m_path.substr(0, sep);
+            } else {
+                if (m_path.empty() || m_path == "/")
+                    m_path = "/" + pItem->m_label;
+                else
+                    m_path = m_path + "/" + pItem->m_label;
+            }
+            if (!Refresh()) {
+                auto body = fmt::format("Failed to access directory:\n\n{}", m_path);
+                new MsgBox(this, body, "Access Error", mbError);
+                m_path = prev_path;
+            }
+#else
             fs::path path = m_path;
 
             if (pItem->m_label == "..")
@@ -2117,6 +2138,7 @@ void FileView::NotifyParent(int nParam_)
                 new MsgBox(this, body, "Access Error", mbError);
                 m_path = path.parent_path().string();
             }
+#endif
         }
     }
 
@@ -2236,7 +2258,32 @@ bool FileView::Refresh()
     {
         auto filters = to_set(split(m_pszFilter, ';'));
 
-#ifndef __circle__
+#ifdef __circle__
+        {
+            const char* dirpath = m_path.empty() ? "/" : m_path.c_str();
+            auto dir = circle_dir_open(dirpath);
+            if (dir) {
+                circle_dir_entry_t entry;
+                while (circle_dir_read(dir, &entry)) {
+                    auto file_name = std::string(entry.name);
+                    bool is_dir = (entry.is_dir != 0);
+
+                    if (!is_dir && !filters.empty()) {
+                        auto ext_pos = file_name.rfind('.');
+                        auto file_ext = (ext_pos != std::string::npos)
+                            ? tolower(file_name.substr(ext_pos)) : std::string{};
+                        if (filters.find(file_ext) == filters.end())
+                            continue;
+                    }
+
+                    items.emplace_back(
+                        is_dir ? sFolderIcon : GetFileIcon(file_name),
+                        file_name);
+                }
+                circle_dir_close(dir);
+            }
+        }
+#else
         std::error_code error{};
         for (auto& entry : fs::directory_iterator(m_path, error))
         {

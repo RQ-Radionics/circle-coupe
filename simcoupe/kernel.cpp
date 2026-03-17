@@ -141,8 +141,13 @@ TShutdownMode CKernel::Run()
     if (pMouse)
         pMouse->RegisterStatusHandler(MouseStatusHandler, nullptr);
 
-    static const char *argv[] = { "simcoupe", nullptr };
-    int argc = 1;
+    // Auto-load disk from SD card if present at /simcoupe/autoload.dsk
+    static const char *argv[] = {
+        "simcoupe",
+        "--disk1", "/simcoupe/autoload.dsk",
+        nullptr
+    };
+    int argc = 3;
 
     SimCoupeMain(argc, (char **)argv);
 

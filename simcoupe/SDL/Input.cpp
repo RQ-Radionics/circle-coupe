@@ -26,6 +26,12 @@ extern "C" unsigned circle_fb_get_pitch(void);
 extern "C" unsigned circle_fb_get_width(void);
 extern "C" unsigned circle_fb_get_height(void);
 
+// Pending F-key action (set from USB callback, processed from main loop)
+static volatile int  s_pending_fn     = 0;
+static volatile bool s_pending_ctrl   = false;
+static volatile bool s_pending_alt    = false;
+static volatile bool s_pending_shift  = false;
+
 static void dbg_paint_scancode(unsigned scancode)
 {
     // Paint a white bar whose width = scancode value at the bottom of screen
@@ -641,6 +647,16 @@ bool Input::FilterEvent(SDL_Event* pEvent_)
 
 void Input::Update()
 {
+#ifdef __circle__
+    // Process any pending F-key action from the USB callback
+    if (s_pending_fn != 0) {
+        int fn = s_pending_fn;
+        bool ctrl = s_pending_ctrl, alt = s_pending_alt, shift = s_pending_shift;
+        s_pending_fn = 0;
+        Actions::Key(fn, true, ctrl, alt, shift);
+    }
+#endif
+
 #ifdef USE_JOYPOLLING
     // Either joystick active?
     if (pJoystick1 || pJoystick2)
@@ -835,9 +851,15 @@ extern "C" void circle_simcoupe_key(unsigned hid_scancode, int pressed,
         return;
     }
 
+    // For F keys, store action to be processed from main loop
+    // (USB callback context may conflict with FatFs when GUI opens disk browser)
     if (nKey >= HK_F1 && nKey <= HK_F12) {
-        Actions::Key(nKey - HK_F1 + 1, fPress,
-                     mod_ctrl != 0, mod_alt != 0, mod_shift != 0);
+        if (fPress) {
+            s_pending_fn    = nKey - HK_F1 + 1;
+            s_pending_ctrl  = (mod_ctrl != 0);
+            s_pending_alt   = (mod_alt != 0);
+            s_pending_shift = (mod_shift != 0);
+        }
         Keyboard::SetKey(nKey, fPress, nMods);
     } else {
         Keyboard::SetKey(nKey, fPress, nMods);
