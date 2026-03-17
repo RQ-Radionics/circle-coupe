@@ -1,0 +1,26 @@
+name: Linux DEB/TAR
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt-get install -y -q libsdl2-dev libaudiofile-dev dpkg-dev
+
+    - name: Build DEB package
+      run: ./package/make_linux_release.sh
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: simcoupe-deb
+        path: build-linux/_packages/*.deb
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: simcoupe-tar
+        path: build-linux/*.tar.gz

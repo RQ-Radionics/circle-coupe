@@ -1,0 +1,14 @@
+.*
+!.gitignore
+!.github
+!.editorconfig
+*- Copy*
+* copy.*
+Thumbs.db
+/[Bb]uild
+/build-*
+/out
+/CMakeSettings.json
+/SimCoupe-*
+/build_*
+/Demos

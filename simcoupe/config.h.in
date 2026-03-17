@@ -1,0 +1,27 @@
+#pragma once
+
+// Version from CMakeList.txt
+#define SIMCOUPE_MAJOR_VERSION  ${MAJOR_VERSION}
+#define SIMCOUPE_MINOR_VERSION  ${MINOR_VERSION}
+#define SIMCOUPE_PATCH_VERSION  ${PATCH_VERSION}
+
+// zlib library for compressed files.
+#cmakedefine HAVE_LIBZ
+
+// bzip2 library for compressed files.
+#cmakedefine HAVE_LIBBZ2
+
+// Simple DirectMedia Layer v2.0
+#cmakedefine HAVE_LIBSDL2
+
+// OpenGL library.
+#cmakedefine HAVE_OPENGL
+
+// Define the resource directory for ROM images etc.
+#cmakedefine RESOURCE_DIR "${RESOURCE_DIR}"
+
+// XAudio2 compatibility redist
+#cmakedefine HAVE_XAUDIO2REDIST
+
+// std::filesystem (C++17)
+#cmakedefine HAVE_STD_FILESYSTEM
