@@ -351,28 +351,23 @@ void Sync()
     }
     else
     {
-        // Throttle exactly like bmc64: sleep when ahead, yield to USB.
-        static unsigned long last_frame_us = 0;
-        if (last_frame_us == 0) {
-            last_frame_us = now_us;
+        // Throttle: draw every FRAME_US microseconds.
+        // sleep(remaining) between frames so USB IRQs can run.
+        static unsigned long next_frame_us = 0;
+        if (next_frame_us == 0) {
+            next_frame_us = now_us + FRAME_US;
             draw_frame = true;
+        } else if (now_us >= next_frame_us) {
+            // Frame boundary reached — draw and schedule next
+            draw_frame = true;
+            next_frame_us += FRAME_US;
+            // If running behind by more than 1 frame, resync
+            if (now_us > next_frame_us + FRAME_US)
+                next_frame_us = now_us + FRAME_US;
         } else {
-            unsigned long next = last_frame_us + FRAME_US;
-            unsigned long elapsed = now_us - last_frame_us;
-            if (elapsed < FRAME_US) {
-                // Ahead of schedule — sleep most, yield rest (like bmc64)
-                unsigned long remaining = FRAME_US - elapsed;
-                if (remaining > 1000)
-                    circle_sleep((long)(remaining - 500));
-                circle_yield();
-                draw_frame = false;
-            } else {
-                draw_frame = true;
-                last_frame_us = next;
-                // Reset if more than 2 frames behind
-                if (now_us - last_frame_us > FRAME_US * 2)
-                    last_frame_us = now_us;
-            }
+            // Not yet — yield once to allow USB processing, no draw
+            draw_frame = false;
+            circle_yield();
         }
     }
 
