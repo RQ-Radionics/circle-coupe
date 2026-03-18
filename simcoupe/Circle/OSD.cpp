@@ -16,8 +16,9 @@ bool OSD::Init()
     // not by high_resolution_clock sleep (which is unreliable on this toolchain).
     SetOption(audiosync, true);
 
-    // No border — 512x192 framebuffer fits cleanly in our 1280x720 display.
-    SetOption(visiblearea, 0);
+    // 8px border — gives 544x208 (pGuiScreen 544x416) which is wide enough
+    // for the file browser dialog (527px wide). visiblearea=0 (512px) clips it.
+    SetOption(visiblearea, 1);
 
     return true;
 }
