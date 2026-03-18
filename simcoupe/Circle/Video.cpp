@@ -100,17 +100,30 @@ public:
         int src_h = fb.Height();
         bool is_gui = GUI::IsActive();
 
-        // Scale factors: GUI already double-height → 1:1, emulator → 2x vertical
-        int scale_y = is_gui ? 1 : 2;
+        // Scale to fill framebuffer maintaining 4:3 aspect ratio.
+        //
+        // SAM source: 512×192 (emulator) or 512×384 (GUI, already double-height)
+        // Target: 4:3 window inside fb_w×fb_h
+        //   max height = fb_h → width = fb_h * 4/3
+        //   if width > fb_w → clamp to fb_w, height = fb_w * 3/4
+        //
+        // For the GUI (src already double-height), source is treated as
+        // a 4:3 image and scaled the same way.
+        //
+        // Nearest-neighbor: src_x = dst_x * src_w / dst_w
+        //                   src_y = dst_y * src_h / dst_h
 
-        int dst_w = std::min(src_w, (int)fb_w);
-        int dst_h = src_h * scale_y;
-        if (dst_h > (int)fb_h) dst_h = (int)fb_h;
+        int dst_w = (int)fb_h * 4 / 3;
+        int dst_h = (int)fb_h;
+        if (dst_w > (int)fb_w) {
+            dst_w = (int)fb_w;
+            dst_h = (int)fb_w * 3 / 4;
+        }
 
         int off_x = ((int)fb_w - dst_w) / 2;
         int off_y = ((int)fb_h - dst_h) / 2;
 
-        // Clear top/bottom borders
+        // Clear top/bottom border rows
         auto clear_row = [&](unsigned y) {
             uint32_t *row = (uint32_t *)((uint8_t *)fbuf + y * pitch);
             for (unsigned x = 0; x < fb_w; x++) row[x] = 0;
@@ -118,37 +131,31 @@ public:
         for (int y = 0; y < off_y; y++) clear_row((unsigned)y);
         for (int y = off_y + dst_h; y < (int)fb_h; y++) clear_row((unsigned)y);
 
+        // Blit with nearest-neighbor scaling, clearing left/right borders inline
+        for (int dy = 0; dy < dst_h; dy++)
+        {
+            int sy = dy * src_h / dst_h;
+            auto pLine = fb.GetLine(sy);
+            uint32_t *row = (uint32_t *)((uint8_t *)fbuf + (off_y + dy) * pitch);
+
+            // Left border
+            for (int x = 0; x < off_x; x++) row[x] = 0;
+
+            // Scaled image
+            uint32_t *dst = row + off_x;
+            for (int dx = 0; dx < dst_w; dx++) {
+                int sx = dx * src_w / dst_w;
+                dst[dx] = s_palette[pLine[sx]];
+            }
+
+            // Right border
+            for (int x = off_x + dst_w; x < (int)fb_w; x++) row[x] = 0;
+        }
+
         if (is_gui)
-        {
-            for (int y = 0; y < dst_h; y++)
-            {
-                auto pLine = fb.GetLine(y);
-                uint32_t *row = (uint32_t *)((uint8_t *)fbuf + (off_y + y) * pitch);
-                for (int x = 0; x < off_x; x++) row[x] = 0;
-                uint32_t *dst = row + off_x;
-                for (int x = 0; x < dst_w; x++) dst[x] = s_palette[pLine[x]];
-                for (int x = off_x + dst_w; x < (int)fb_w; x++) row[x] = 0;
-            }
             circle_fb_flip_nowait();
-        }
         else
-        {
-            for (int y = 0; y < src_h && (off_y + y*2 + 1) < (int)fb_h; y++)
-            {
-                auto pLine = fb.GetLine(y);
-                uint32_t *row0 = (uint32_t *)((uint8_t *)fbuf + (off_y + y*2    ) * pitch);
-                uint32_t *row1 = (uint32_t *)((uint8_t *)fbuf + (off_y + y*2 + 1) * pitch);
-                for (int x = 0; x < off_x; x++) { row0[x] = 0; row1[x] = 0; }
-                uint32_t *dst0 = row0 + off_x;
-                uint32_t *dst1 = row1 + off_x;
-                for (int x = 0; x < dst_w; x++) {
-                    uint32_t c = s_palette[pLine[x]];
-                    dst0[x] = c; dst1[x] = c;
-                }
-                for (int x = off_x + dst_w; x < (int)fb_w; x++) { row0[x] = 0; row1[x] = 0; }
-            }
             circle_fb_flip();
-        }
     }
 
 private:
