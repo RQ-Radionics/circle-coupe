@@ -53,7 +53,10 @@ class CircleVideo : public IVideoBase
 {
 public:
     CircleVideo() = default;
-    ~CircleVideo() override { circle_fb_quit(); }
+    ~CircleVideo() override {
+        circle_fb_quit();
+        delete[] m_shadow;
+    }
 
     bool Init() override
     {
@@ -70,6 +73,10 @@ public:
 
         m_fb_w = circle_fb_get_width();
         m_fb_h = circle_fb_get_height();
+        m_shadow_pitch = m_fb_w * sizeof(uint32_t);
+        m_shadow = new uint32_t[m_fb_w * m_fb_h];
+        if (m_shadow)
+            memset(m_shadow, 0, m_fb_w * m_fb_h * sizeof(uint32_t));
         return true;
     }
 
@@ -98,8 +105,13 @@ public:
         if (fb_w == 0 || fb_h == 0) return;
 
         void    *fbuf    = circle_fb_get_buffer();
-        unsigned pitch   = circle_fb_get_pitch();
-        if (!fbuf) return;
+        unsigned gpu_pitch = circle_fb_get_pitch();
+        if (!fbuf || !m_shadow) return;
+
+        // Use shadow buffer (cached RAM) for all rendering,
+        // then memcpy to GPU framebuffer (uncached) at the end.
+        uint32_t *shadow = m_shadow;
+        unsigned pitch = m_shadow_pitch;
 
         int src_w = fb.Width();
         int src_h = fb.Height();
@@ -124,23 +136,21 @@ public:
         for (int y = 0; y < off_y; y++) clear_row((unsigned)y);
         for (int y = off_y + dst_h; y < (int)fb_h; y++) clear_row((unsigned)y);
 
-        // Fast blit: no scaling division — 1:1 X, double scanlines for SAM
+        // Render to shadow buffer (cached RAM) — fast
         if (is_gui) {
-            // GUI: 1:1 copy with palette conversion
             for (int y = 0; y < dst_h && (off_y + y) < (int)fb_h; y++) {
                 auto pLine = fb.GetLine(y);
-                uint32_t *row = (uint32_t *)((uint8_t *)fbuf + (off_y + y) * pitch);
+                uint32_t *row = shadow + (off_y + y) * m_fb_w;
                 for (int x = 0; x < off_x; x++) row[x] = 0;
                 uint32_t *d = row + off_x;
                 for (int x = 0; x < dst_w; x++) d[x] = s_palette[pLine[x]];
                 for (int x = off_x + dst_w; x < (int)fb_w; x++) row[x] = 0;
             }
         } else {
-            // SAM: double each scanline vertically
             for (int y = 0; y < src_h && (off_y + y*2 + 1) < (int)fb_h; y++) {
                 auto pLine = fb.GetLine(y);
-                uint32_t *row0 = (uint32_t *)((uint8_t *)fbuf + (off_y + y*2    ) * pitch);
-                uint32_t *row1 = (uint32_t *)((uint8_t *)fbuf + (off_y + y*2 + 1) * pitch);
+                uint32_t *row0 = shadow + (off_y + y*2    ) * m_fb_w;
+                uint32_t *row1 = shadow + (off_y + y*2 + 1) * m_fb_w;
                 for (int x = 0; x < off_x; x++) { row0[x] = 0; row1[x] = 0; }
                 uint32_t *d0 = row0 + off_x;
                 uint32_t *d1 = row1 + off_x;
@@ -152,12 +162,18 @@ public:
             }
         }
 
+        // Copy shadow → GPU framebuffer in one burst (uncached writes)
+        uint8_t *dst_fb = (uint8_t *)fbuf;
+        uint8_t *src_sh = (uint8_t *)shadow;
+        for (unsigned y = 0; y < fb_h; y++) {
+            memcpy(dst_fb + y * gpu_pitch, src_sh + y * pitch, pitch);
+        }
+
         // Measure blit time
         unsigned long t1 = circle_get_ticks();
         s_total_us += (t1 - t0);
         s_count++;
         if (s_count >= 50) {
-            // Store average blit time in a global for profiling display
             extern unsigned long g_blit_avg_us;
             g_blit_avg_us = s_total_us / s_count;
             s_total_us = 0;
@@ -173,6 +189,8 @@ public:
 private:
     unsigned m_fb_w = 0;
     unsigned m_fb_h = 0;
+    uint32_t *m_shadow = nullptr;  // cached RAM shadow of framebuffer
+    unsigned m_shadow_pitch = 0;
 };
 
 // Factory function called from UI::CreateVideo()
