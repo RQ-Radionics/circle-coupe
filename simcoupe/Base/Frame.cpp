@@ -331,23 +331,13 @@ void Sync()
     // this ARM toolchain - elapsed values come out as raw nanosecond
     // counts instead of seconds, breaking all throttle and profiling.
 
-    // Use raw CNTPCT ticks via circle_get_ticks().
-    // With USE_PHYSICAL_COUNTER on AArch32, GetClockTicks() returns CNTPCT
-    // ticks at CNTFRQ (19.2MHz on RPi3). We compute FRAME_TICKS from CNTFRQ
-    // at runtime so the throttle is correct regardless of counter frequency.
-    unsigned long now_us = circle_get_ticks();
+    // Use circle_get_clock_ticks64() which correctly returns microseconds
+    // on AArch32 (divides CNTPCT by CNTFRQ). This is the same function
+    // used by the profiling code and known to work correctly.
+    unsigned long now_us = (unsigned long)circle_get_clock_ticks64();
 
-    // FRAME_TICKS = CNTFRQ / ACTUAL_FRAMES_PER_SECOND
-    // Read CNTFRQ once and cache it.
-    static unsigned long s_cntfrq = 0;
-    if (s_cntfrq == 0) {
-#if AARCH == 32
-        asm volatile ("mrc p15, 0, %0, c14, c0, 0" : "=r"(s_cntfrq));
-#else
-        s_cntfrq = 1000000UL; // AArch64: GetClockTicks already in µs
-#endif
-    }
-    const unsigned long FRAME_US = s_cntfrq / (unsigned long)ACTUAL_FRAMES_PER_SECOND;
+    constexpr unsigned long FRAME_US =
+        1000000UL / (unsigned long)ACTUAL_FRAMES_PER_SECOND; // ~19960 µs
 
     if ((g_nTurbo & TURBO_BOOT) && !GUI::IsActive())
     {

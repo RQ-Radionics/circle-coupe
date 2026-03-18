@@ -73,20 +73,11 @@ extern "C" unsigned long circle_get_ticks(void)
 #endif
 }
 
-// Sleep for n raw CNTPCT ticks — spinloop allows hardware IRQs.
-extern "C" void circle_sleep(long ticks)
+// Sleep for n microseconds using Circle's calibrated usDelay.
+extern "C" void circle_sleep(long us)
 {
-    if (ticks <= 0) return;
-#if defined(USE_PHYSICAL_COUNTER) && AARCH == 32
-    unsigned long start, dummy;
-    asm volatile ("mrrc p15, 0, %0, %1, c14" : "=r"(start), "=r"(dummy));
-    unsigned long now;
-    do {
-        asm volatile ("mrrc p15, 0, %0, %1, c14" : "=r"(now), "=r"(dummy));
-    } while (now - start < (unsigned long)ticks);
-#else
-    CTimer::SimpleusDelay((unsigned long)ticks);
-#endif
+    if (us > 0 && us < 2000000L)
+        CTimer::Get()->usDelay((unsigned)us);
 }
 
 extern "C" void circle_yield(void)
