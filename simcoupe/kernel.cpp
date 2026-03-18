@@ -120,8 +120,7 @@ boolean CKernel::Initialize()
 
     circle_audio_set_interrupt(&m_Interrupt);
 
-    // Start secondary cores -- this will call Run(1), Run(2), Run(3)
-    // Run(1) will block waiting for Initialize() to complete
+    // Start secondary cores FIRST -- Run(1) will spin on m_bLaunch
     if (bOK) bOK = CMultiCoreSupport::Initialize();
 
     return bOK;
@@ -143,6 +142,11 @@ TShutdownMode CKernel::Run()
     if (pMouse)
         pMouse->RegisterStatusHandler(MouseStatusHandler, nullptr);
 
+    // Signal core 1 to start the emulator
+    m_LaunchLock.Acquire();
+    m_bLaunch = true;
+    m_LaunchLock.Release();
+
     // Core 0 loops forever servicing USB and scheduler
     while (true)
     {
@@ -153,7 +157,7 @@ TShutdownMode CKernel::Run()
     return ShutdownHalt;
 }
 
-// Core 1: emulator -- runs SimCoupeMain() independently of core 0
+// Core 1: emulator -- waits for core 0 to finish init, then runs SimCoupeMain()
 void CKernel::Run(unsigned nCore)
 {
     if (nCore != 1) {
@@ -161,8 +165,15 @@ void CKernel::Run(unsigned nCore)
         while (true) { asm volatile("wfe"); }
     }
 
-    // Wait until Initialize() has completed on core 0
-    // (CMultiCoreSupport::Initialize() signals cores after kernel init)
+    // Spin until core 0 completes Initialize() and USB setup
+    while (true) {
+        m_LaunchLock.Acquire();
+        bool ready = m_bLaunch;
+        m_LaunchLock.Release();
+        if (ready) break;
+        // Brief pause to avoid hammering the bus
+        for (volatile int i = 0; i < 1000; i++) { }
+    }
 
     static const char *argv[] = {
         "simcoupe",
@@ -173,6 +184,5 @@ void CKernel::Run(unsigned nCore)
 
     SimCoupeMain(argc, (char **)argv);
 
-    // If SimCoupe exits, park this core
     while (true) { asm volatile("wfe"); }
 }
