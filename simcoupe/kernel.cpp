@@ -1,8 +1,9 @@
 //
 // kernel.cpp - SimCoupe Circle kernel for Raspberry Pi 3B
 //
-// No CScreenDevice -- the display is entirely owned by SDL3.
-// Logger output goes to serial (GPIO 14/15, 115200 baud).
+// Multi-core:
+//   Core 0: Initialize() then Run() -- IO loop (USB, scheduler yield)
+//   Core 1: Run(1) -- SimCoupeMain() -- full Z80+video+audio emulation
 //
 #include "kernel.h"
 
@@ -25,7 +26,6 @@ static const char FromKernel[] = "simcoupe-kernel";
 static unsigned char s_prev_modifiers = 0;
 static unsigned char s_prev_keys[6] = {0};
 
-// USB HID modifier bit -> SDL scancode (USB HID values match SDL scancodes)
 static const struct { unsigned char mask; unsigned scancode; } s_mod_map[] = {
     { (1<<0), 224 }, // SDL_SCANCODE_LCTRL
     { (1<<1), 225 }, // SDL_SCANCODE_LSHIFT
@@ -46,7 +46,6 @@ static void KeyStatusHandlerRaw(unsigned char ucModifiers,
     int mctrl  = (ucModifiers & ((1<<0)|(1<<4))) ? 1 : 0;
     int malt   = (ucModifiers & ((1<<2)|(1<<6))) ? 1 : 0;
 
-    // Modifier changes
     unsigned char mod_changed = s_prev_modifiers ^ ucModifiers;
     for (int i = 0; s_mod_map[i].mask; i++) {
         if (mod_changed & s_mod_map[i].mask)
@@ -56,7 +55,6 @@ static void KeyStatusHandlerRaw(unsigned char ucModifiers,
     }
     s_prev_modifiers = ucModifiers;
 
-    // Key releases
     for (int p = 0; p < 6; p++) {
         unsigned char k = s_prev_keys[p];
         if (k == 0) continue;
@@ -67,7 +65,6 @@ static void KeyStatusHandlerRaw(unsigned char ucModifiers,
             circle_simcoupe_key(k, 0, mshift, mctrl, malt);
     }
 
-    // Key presses
     for (int c = 0; c < 6; c++) {
         unsigned char k = RawKeys[c];
         if (k == 0) continue;
@@ -81,8 +78,6 @@ static void KeyStatusHandlerRaw(unsigned char ucModifiers,
     memcpy(s_prev_keys, RawKeys, 6);
 }
 
-// ---- USB mouse handler ----
-
 static void MouseStatusHandler(unsigned /*nButtons*/,
                                 int /*nDX*/, int /*nDY*/, int /*nWheel*/,
                                 void * /*pParam*/)
@@ -93,7 +88,9 @@ static void MouseStatusHandler(unsigned /*nButtons*/,
 // ---- CKernel ----------------------------------------------------------------
 
 CKernel::CKernel()
-:   m_Serial (),
+:   CMultiCoreSupport (&m_Memory),
+    m_Memory (),
+    m_Serial (),
     m_Timer  (&m_Interrupt),
     m_Logger (m_Options.GetLogLevel(), &m_Timer),
     m_Scheduler(),
@@ -118,19 +115,24 @@ boolean CKernel::Initialize()
 
     if (bOK) {
         if (fatfs_mount() != 0)
-            m_Logger.Write(FromKernel, LogWarning,
-                "FatFs mount failed");
+            m_Logger.Write(FromKernel, LogWarning, "FatFs mount failed");
     }
 
     circle_audio_set_interrupt(&m_Interrupt);
+
+    // Start secondary cores -- this will call Run(1), Run(2), Run(3)
+    // Run(1) will block waiting for Initialize() to complete
+    if (bOK) bOK = CMultiCoreSupport::Initialize();
+
     return bOK;
 }
 
+// Core 0: IO loop -- keeps USB + scheduler alive while core 1 runs the emulator
 TShutdownMode CKernel::Run()
 {
     m_USBHCI.UpdatePlugAndPlay();
 
-    // Register USB devices -- same pattern as bmc64
+    // Register USB devices
     CUSBKeyboardDevice *pKeyboard = (CUSBKeyboardDevice *)
         CDeviceNameService::Get()->GetDevice("ukbd1", FALSE);
     if (pKeyboard)
@@ -141,7 +143,27 @@ TShutdownMode CKernel::Run()
     if (pMouse)
         pMouse->RegisterStatusHandler(MouseStatusHandler, nullptr);
 
-    // Auto-load disk from SD card if present at /simcoupe/autoload.dsk
+    // Core 0 loops forever servicing USB and scheduler
+    while (true)
+    {
+        m_Scheduler.Yield();
+        m_USBHCI.UpdatePlugAndPlay();
+    }
+
+    return ShutdownHalt;
+}
+
+// Core 1: emulator -- runs SimCoupeMain() independently of core 0
+void CKernel::Run(unsigned nCore)
+{
+    if (nCore != 1) {
+        // Cores 2 and 3: not used, park them
+        while (true) { asm volatile("wfe"); }
+    }
+
+    // Wait until Initialize() has completed on core 0
+    // (CMultiCoreSupport::Initialize() signals cores after kernel init)
+
     static const char *argv[] = {
         "simcoupe",
         "--disk1", "/simcoupe/autoload.dsk",
@@ -151,5 +173,6 @@ TShutdownMode CKernel::Run()
 
     SimCoupeMain(argc, (char **)argv);
 
-    return ShutdownHalt;
+    // If SimCoupe exits, park this core
+    while (true) { asm volatile("wfe"); }
 }

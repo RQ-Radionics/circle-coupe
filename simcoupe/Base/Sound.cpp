@@ -96,6 +96,9 @@ void Sound::FrameUpdate()
 
     auto buffer_level = Audio::AddData(pbSampleBuffer, nSize);
 
+#ifndef __circle__
+    // On bare-metal the throttle is done by the video flip (circle_fb_flip).
+    // Sleeping here would block the single emulator core and reduce fps.
     using namespace std::chrono;
     static high_resolution_clock::time_point frame_time;
     auto one_frame = duration_cast<microseconds>(
@@ -111,19 +114,9 @@ void Sound::FrameUpdate()
         auto max_adjust = 0.01f;
         auto scale = (1.0f - max_adjust) + 2.0f * max_adjust * buffer_level;
         frame_time += duration_cast<microseconds>(one_frame * scale);
-#ifdef __circle__
-        {
-            auto now2 = high_resolution_clock::now();
-            if (frame_time > now2) {
-                auto ns = duration_cast<std::chrono::nanoseconds>(frame_time - now2).count();
-                if (ns > 0 && ns < 100000000LL)
-                    circle_delay_ns((unsigned long long)ns);
-            }
-        }
-#else
         std::this_thread::sleep_until(frame_time);
-#endif
     }
+#endif
 }
 
 ////////////////////////////////////////////////////////////////////////////////

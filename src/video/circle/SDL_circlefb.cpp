@@ -11,6 +11,21 @@
 #include <stdint.h>
 #include <circle/bcmframebuffer.h>
 
+/* Microseconds since boot - reads CNTPCT directly, same fix as SDL_circletimer_impl.cpp */
+static inline unsigned long long circle_get_clock_ticks64_us(void)
+{
+#if AARCH == 32
+    unsigned long nLow, nHigh;
+    asm volatile ("mrrc p15, 0, %0, %1, c14" : "=r"(nLow), "=r"(nHigh));
+    unsigned long long cntpct = ((unsigned long long)nHigh << 32) | nLow;
+    unsigned long cntfrq;
+    asm volatile ("mrc p15, 0, %0, c14, c0, 0" : "=r"(cntfrq));
+    return cntpct * 1000000ULL / (unsigned long long)cntfrq;
+#else
+    return (unsigned long long)CTimer::GetClockTicks64();
+#endif
+}
+
 static CBcmFrameBuffer *s_pFrameBuffer = nullptr;
 static unsigned s_back_buffer = 0;  /* 0 or 1 -- which buffer is the back */
 
@@ -78,27 +93,15 @@ void *circle_fb_get_buffer(void)
     return base + s_back_buffer * s_height * s_pitch;
 }
 
-/* Flip: request page flip then wait for vsync to confirm it took effect.
- *
- * Order matters: SetVirtualOffset() queues the flip with the GPU; the
- * VideoCore applies it on the next vertical blank.  WaitForVerticalSync()
- * then blocks until that blank occurs, guaranteeing the new buffer is
- * visible before we start overwriting the old one.  Reversing the order
- * (vsync first, then set offset) causes the SetVirtualOffset to land in
- * the middle of an active scanout period → visible tearing/flicker.
+/* Flip: show the back buffer immediately, no waiting.
+ * Throttle is done in Frame::Sync() using circle_get_clock_ticks64().
+ * SetVirtualOffset takes effect on the next natural vsync from the GPU.
  */
 void circle_fb_flip(void)
 {
     if (!s_pFrameBuffer) return;
-
-    /* Queue the flip: show the back buffer starting from the next vsync */
     unsigned display_y = s_back_buffer * s_height;
     s_pFrameBuffer->SetVirtualOffset(0, display_y);
-
-    /* Wait until the VideoCore has actually switched to the new buffer */
-    s_pFrameBuffer->WaitForVerticalSync();
-
-    /* Now safe to render into the old front buffer (new back buffer) */
     s_back_buffer ^= 1;
 }
 

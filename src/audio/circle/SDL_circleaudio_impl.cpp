@@ -25,6 +25,7 @@
 #include <circle/sound/pwmsoundbasedevice.h>
 #include <circle/sound/soundbasedevice.h>
 #include <circle/timer.h>
+#include <circle/sched/scheduler.h>
 
 /* ---- SDL3 audio format constants (mirror SDL_audio.h values) ---- */
 /* We avoid including SDL headers here to keep the C++ clean */
@@ -139,13 +140,11 @@ uint8_t *circle_audio_get_buf(unsigned *pSizeOut)
     return s_pMixBuf;
 }
 
-/* WaitDevice: spin until queue has at least nFrames free slots */
+/* WaitDevice: never block - audio data may be dropped if queue is full
+ * but that is better than stalling the single emulator core. */
 void circle_audio_wait(unsigned nFrames)
 {
-    if (!s_pSound) return;
-    while (s_pSound->QueueFramesAvail() < nFrames) {
-        CTimer::Get()->usDelay(500); /* 0.5ms busy-wait */
-    }
+    (void)nFrames;
 }
 
 /* PlayDevice: push mix buffer to Circle sound queue */

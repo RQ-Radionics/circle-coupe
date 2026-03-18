@@ -1,6 +1,10 @@
 //
 // kernel.h - SimCoupe Circle kernel for Raspberry Pi 3B (AArch32)
 //
+// Multi-core architecture (like bmc64):
+//   Core 0: Initialize() + Run(0) -- USB host, IRQs, IO loop (UpdatePlugAndPlay)
+//   Core 1: Run(1) -- SimCoupeMain() -- Z80 emulation, video, audio
+//
 #pragma once
 
 #include <circle/actled.h>
@@ -11,8 +15,10 @@
 #include <circle/interrupt.h>
 #include <circle/timer.h>
 #include <circle/logger.h>
+#include <circle/memory.h>
 #include <circle/sched/scheduler.h>
 #include <circle/usb/usbhcidevice.h>
+#include <circle/multicore.h>
 #include <circle/types.h>
 
 // SD card + FatFs
@@ -20,16 +26,22 @@
 
 enum TShutdownMode { ShutdownNone, ShutdownHalt, ShutdownReboot };
 
-class CKernel
+class CKernel : public CMultiCoreSupport
 {
 public:
     CKernel();
     ~CKernel();
 
     boolean Initialize();
+
+    // Core 0: IO loop (USB plug-and-play, scheduler)
     TShutdownMode Run();
 
+    // CMultiCoreSupport: called on each secondary core
+    void Run(unsigned nCore) override;
+
 private:
+    CMemorySystem       m_Memory;
     CActLED             m_ActLED;
     CKernelOptions      m_Options;
     CDeviceNameService  m_DeviceNameService;

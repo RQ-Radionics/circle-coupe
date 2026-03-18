@@ -21,6 +21,10 @@
 #include "SimCoupe.h"
 #include "Frame.h"
 
+#ifdef __circle__
+extern "C" unsigned long long circle_get_clock_ticks64(void);
+#endif
+
 #include "Audio.h"
 #include "AtaAdapter.h"
 #include "AVI.h"
@@ -311,6 +315,62 @@ bool TurboMode()
 
 void Sync()
 {
+#ifdef __circle__
+    // On bare-metal we bypass high_resolution_clock entirely and use
+    // circle_get_clock_ticks64() directly (microseconds since boot).
+    // high_resolution_clock maps to system_clock which internally works
+    // in nanoseconds, but duration_cast conversions are unreliable with
+    // this ARM toolchain - elapsed values come out as raw nanosecond
+    // counts instead of seconds, breaking all throttle and profiling.
+
+    auto now_us = circle_get_clock_ticks64();   // microseconds
+
+    constexpr unsigned long long FRAME_US =
+        1000000ULL / (unsigned long long)ACTUAL_FRAMES_PER_SECOND; // ~19960 µs
+
+    if ((g_nTurbo & TURBO_BOOT) && !GUI::IsActive())
+    {
+        draw_frame = false;
+    }
+    else if (!(g_nTurbo & TURBO_KEY) && !GUI::IsActive() && TurboMode())
+    {
+        static unsigned long long last_drawn_us = 0;
+        unsigned long long turbo_frame_us = 1000000ULL / FPS_IN_TURBO_MODE;
+        draw_frame = (now_us - last_drawn_us) >= turbo_frame_us;
+        if (draw_frame) last_drawn_us = now_us;
+    }
+    else
+    {
+        // Throttle to 50fps using the hardware clock directly.
+        static unsigned long long last_frame_us = 0;
+        if (last_frame_us == 0) {
+            last_frame_us = now_us;
+            draw_frame = true;
+        } else {
+            draw_frame = (now_us - last_frame_us) >= FRAME_US;
+            if (draw_frame)
+                last_frame_us += FRAME_US;
+        }
+    }
+
+    static int num_frames;
+    num_frames++;
+
+    static unsigned long long last_profiled_us = 0;
+    if (last_profiled_us == 0 || (now_us - last_profiled_us) >= 1000000ULL)
+    {
+        if (last_profiled_us != 0)
+        {
+            float elapsed_s = (float)(now_us - last_profiled_us) / 1000000.0f;
+            float fps = (float)num_frames / elapsed_s;
+            float percent = fps / ACTUAL_FRAMES_PER_SECOND * 100.0f;
+            profile_text = fmt::format("{:.0f}%", percent);
+        }
+        last_profiled_us = now_us;
+        num_frames = 0;
+    }
+
+#else
     using namespace std::chrono;
     using namespace std::literals::chrono_literals;
     auto now = high_resolution_clock::now();
@@ -328,25 +388,7 @@ void Sync()
     }
     else
     {
-#ifdef __circle__
-        // On bare-metal, Sound::FrameUpdate() does not throttle.
-        // Limit rendering to ACTUAL_FRAMES_PER_SECOND (50fps).
-        static high_resolution_clock::time_point last_frame;
-        static bool initialized = false;
-        if (!initialized) {
-            last_frame = now;
-            initialized = true;
-            draw_frame = true;
-        } else {
-            auto frame_duration = duration_cast<high_resolution_clock::duration>(
-                seconds(1)) / ACTUAL_FRAMES_PER_SECOND;
-            draw_frame = (now - last_frame) >= frame_duration;
-            if (draw_frame)
-                last_frame += duration_cast<high_resolution_clock::duration>(frame_duration);
-        }
-#else
         draw_frame = true;
-#endif
     }
 
     static int num_frames;
@@ -357,18 +399,15 @@ void Sync()
     {
         if (last_profiled)
         {
-            // Calculate as plain floats to avoid chrono duration arithmetic
-            // producing a duration type instead of a scalar, which causes
-            // fmt::format to receive a duration object and print "0%".
-            float elapsed_s = std::chrono::duration<float, std::ratio<1>>(now - *last_profiled).count();
-            float fps = static_cast<float>(num_frames) / elapsed_s;
+            float elapsed_s = duration_cast<duration<float>>(now - *last_profiled).count();
+            float fps = (float)num_frames / elapsed_s;
             float percent = fps / ACTUAL_FRAMES_PER_SECOND * 100.0f;
             profile_text = fmt::format("{:.0f}%", percent);
         }
-
         last_profiled = now;
         num_frames = 0;
     }
+#endif
 
     if (GUI::IsActive())
     {

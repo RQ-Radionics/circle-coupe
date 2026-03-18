@@ -40,10 +40,21 @@ struct SDL_PrivateAudioData {
     int      mixbuf_size;
 };
 
+/* Global device pointer so circle_audio_iterate() can call SDL internals */
+static SDL_AudioDevice *s_pDevice = NULL;
+
+/* Called from UI::CheckEvents() each CPU loop iteration to drive audio */
+void circle_audio_iterate(void)
+{
+    if (s_pDevice)
+        SDL_PlaybackAudioThreadIterate(s_pDevice);
+}
+
 /* ---- Driver callbacks ---- */
 
 static bool CIRCLEAUDIO_OpenDevice(SDL_AudioDevice *device)
 {
+    s_pDevice = device;
     unsigned nSampleRate  = (unsigned)device->spec.freq;
     unsigned nChannels    = (unsigned)device->spec.channels;
     unsigned nFrames      = circle_audio_sample_frames();
@@ -75,6 +86,7 @@ static bool CIRCLEAUDIO_OpenDevice(SDL_AudioDevice *device)
 
 static void CIRCLEAUDIO_CloseDevice(SDL_AudioDevice *device)
 {
+    s_pDevice = NULL;
     circle_audio_close();
     if (device->hidden) {
         /* mixbuf is owned by the C++ glue, don't free here */
@@ -113,7 +125,10 @@ static bool CIRCLEAUDIO_Init(SDL_AudioDriverImpl *impl)
 
     impl->OnlyHasDefaultPlaybackDevice  = true;
     impl->HasRecordingSupport           = false;
-    /* No SDL audio thread - kernel calls SDL_PlaybackAudioThreadIterate() */
+    /* ProvidesOwnCallbackThread=true: SDL does not create an audio thread.
+     * SDL_PlaybackAudioThreadIterate() is called from UI::CheckEvents()
+     * on every iteration of the CPU loop, which drives WaitDevice+PlayDevice
+     * without needing Circle pthreads (which hang on bare-metal). */
     impl->ProvidesOwnCallbackThread     = true;
 
     return true;

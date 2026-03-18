@@ -40,6 +40,7 @@
 #undef FALSE
 #include <circle/sched/scheduler.h>
 #include "Debug.h"
+extern "C" void circle_audio_iterate(void);
 #endif
 #ifndef HAVE_LIBSDL3
 #include "SDL20_GL3.h"
@@ -119,13 +120,14 @@ bool UI::CheckEvents()
 
 #ifdef __circle__
     // On bare-metal, yield to the Circle scheduler so USB interrupt callbacks
-    // can run and queue keyboard/mouse events.  This is especially critical
-    // when the debugger is active (Debug::IsActive()) because ExecuteChunk()
-    // is skipped, so there is no natural yield from the Z80 execution loop.
-    // Without this, WaitForVerticalSync() or tight spin loops can starve the
-    // USB host driver and make the UI appear completely frozen.
+    // can run and queue keyboard/mouse events.
     if (CScheduler::IsActive())
         CScheduler::Get()->Yield();
+
+    // Drive SDL audio manually: ProvidesOwnCallbackThread=true so SDL won't
+    // spin its own audio thread. circle_audio_wait is a no-op so this returns
+    // quickly even if the PWM queue is full.
+    circle_audio_iterate();
 #endif
 
     while (1)
