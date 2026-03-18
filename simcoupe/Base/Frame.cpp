@@ -348,28 +348,28 @@ void Sync()
     }
     else
     {
-        // Throttle: busy-wait until 20ms have elapsed since the last frame.
-        // This ensures every Z80 frame maps to exactly one display frame,
-        // giving smooth animation. Without this wait, the emulator runs at
-        // maximum speed and skips most frames visually.
+        // Throttle to real SAM speed (50fps = 20ms/frame).
+        // We yield to the scheduler each iteration so USB can process events.
+        // When behind, catch up without sleeping. When ahead, yield until ready.
         static unsigned long long last_frame_us = 0;
         if (last_frame_us == 0) {
             last_frame_us = now_us;
+            draw_frame = true;
         } else {
-            // Wait until next frame boundary, yielding to scheduler so USB
-        // interrupt callbacks can run (prevents losing keyboard input).
-        unsigned long long next = last_frame_us + FRAME_US;
-        if (now_us < next) {
-            unsigned long long remaining = next - now_us;
-            // Sleep most of the wait via usDelay, then yield remaining
-            if (remaining > 2000)
-                circle_delay_us(remaining - 1000);
-            while (circle_get_clock_ticks64() < next)
+            unsigned long long next = last_frame_us + FRAME_US;
+            if (now_us < next) {
+                // Too fast — yield to USB scheduler, don't draw yet
                 circle_yield();
+                draw_frame = false;
+            } else {
+                // Time for next frame
+                draw_frame = true;
+                last_frame_us = next;
+                // If we're more than 2 frames behind, reset to avoid spiral
+                if (now_us > last_frame_us + FRAME_US * 2)
+                    last_frame_us = now_us;
+            }
         }
-        last_frame_us = (now_us < next) ? next : now_us;
-        }
-        draw_frame = true;
     }
 
     static int num_frames;
