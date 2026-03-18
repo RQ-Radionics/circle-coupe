@@ -91,9 +91,25 @@ extern "C" void circle_audio_set_interrupt(void *pInt)
 
 bool Audio::Init()
 {
-    // Audio disabled temporarily — PWM DMA Start() may block indefinitely
-    // TODO: fix CPWMSoundBaseDevice init (circle-coupe-k4c)
-    s_active = false;
+    Exit();
+
+    if (!s_pInterrupt)
+        return false;
+
+    constexpr unsigned SAMPLE_RATE = 44100;
+    constexpr unsigned CHUNK_SIZE  = 1024;
+
+    s_pPWM = new CirclePWMSound(s_pInterrupt, SAMPLE_RATE, CHUNK_SIZE);
+    s_pPWM->SetWriteFormat(SoundFormatSigned16, 2);
+
+    if (!s_pPWM->Start())
+    {
+        delete s_pPWM;
+        s_pPWM = nullptr;
+        return false;
+    }
+
+    s_active = true;
     return true;
 }
 
