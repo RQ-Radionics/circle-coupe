@@ -360,7 +360,7 @@ void Sync()
             // Calculate as plain floats to avoid chrono duration arithmetic
             // producing a duration type instead of a scalar, which causes
             // fmt::format to receive a duration object and print "0%".
-            float elapsed_s = std::chrono::duration<float>(now - *last_profiled).count();
+            float elapsed_s = std::chrono::duration<float, std::ratio<1>>(now - *last_profiled).count();
             float fps = static_cast<float>(num_frames) / elapsed_s;
             float percent = fps / ACTUAL_FRAMES_PER_SECOND * 100.0f;
             profile_text = fmt::format("{:.0f}%", percent);
