@@ -131,7 +131,17 @@ public:
         for (int y = 0; y < off_y; y++) clear_row((unsigned)y);
         for (int y = off_y + dst_h; y < (int)fb_h; y++) clear_row((unsigned)y);
 
-        // Blit with nearest-neighbor scaling, clearing left/right borders inline
+        // Precalculate X source mapping table once (avoids per-pixel division)
+        static int s_xtab[1920];   // max fb width
+        static int s_xtab_w = 0, s_xtab_sw = 0;
+        if (s_xtab_w != dst_w || s_xtab_sw != src_w) {
+            for (int dx = 0; dx < dst_w && dx < 1920; dx++)
+                s_xtab[dx] = dx * src_w / dst_w;
+            s_xtab_w = dst_w;
+            s_xtab_sw = src_w;
+        }
+
+        // Blit with nearest-neighbor scaling using precalculated table
         for (int dy = 0; dy < dst_h; dy++)
         {
             int sy = dy * src_h / dst_h;
@@ -141,12 +151,10 @@ public:
             // Left border
             for (int x = 0; x < off_x; x++) row[x] = 0;
 
-            // Scaled image
+            // Scaled image — table lookup instead of per-pixel division
             uint32_t *dst = row + off_x;
-            for (int dx = 0; dx < dst_w; dx++) {
-                int sx = dx * src_w / dst_w;
-                dst[dx] = s_palette[pLine[sx]];
-            }
+            for (int dx = 0; dx < dst_w; dx++)
+                dst[dx] = s_palette[pLine[s_xtab[dx]]];
 
             // Right border
             for (int x = off_x + dst_w; x < (int)fb_w; x++) row[x] = 0;
