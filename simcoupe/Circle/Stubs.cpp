@@ -73,11 +73,14 @@ extern "C" unsigned long circle_get_ticks(void)
 #endif
 }
 
-// Sleep for n microseconds using Circle's calibrated usDelay.
+// Sleep for n microseconds using circle_get_clock_ticks64() as reference.
+// This is the only timer we know works correctly on AArch32 RPi3.
 extern "C" void circle_sleep(long us)
 {
-    if (us > 0 && us < 2000000L)
-        CTimer::Get()->usDelay((unsigned)us);
+    if (us <= 0 || us >= 2000000L) return;
+    unsigned long long start = circle_get_clock_ticks64();
+    unsigned long long end   = start + (unsigned long long)us;
+    while (circle_get_clock_ticks64() < end) { }
 }
 
 extern "C" void circle_yield(void)
