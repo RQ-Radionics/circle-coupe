@@ -162,11 +162,25 @@ public:
             }
         }
 
-        // Copy shadow → GPU framebuffer in one burst (uncached writes)
+        // Copy only the active area to GPU framebuffer (uncached writes).
+        // Borders are black and only need copying once.
+        // Copy only changed pixels to GPU: active area only, not full rows.
+        // GPU framebuffer is uncached — minimize bytes written.
+        static bool s_borders_cleared = false;
         uint8_t *dst_fb = (uint8_t *)fbuf;
         uint8_t *src_sh = (uint8_t *)shadow;
-        for (unsigned y = 0; y < fb_h; y++) {
-            memcpy(dst_fb + y * gpu_pitch, src_sh + y * pitch, pitch);
+        if (!s_borders_cleared) {
+            // Clear entire GPU framebuffer once (borders)
+            memset(fbuf, 0, fb_h * gpu_pitch);
+            s_borders_cleared = true;
+        }
+        // Copy only the active pixel region (dst_w pixels per row)
+        unsigned copy_bytes = dst_w * sizeof(uint32_t);
+        unsigned off_bytes = off_x * sizeof(uint32_t);
+        for (int y = off_y; y < off_y + dst_h && y < (int)fb_h; y++) {
+            memcpy(dst_fb + y * gpu_pitch + off_bytes,
+                   src_sh + y * pitch + off_bytes,
+                   copy_bytes);
         }
 
         // Measure blit time
