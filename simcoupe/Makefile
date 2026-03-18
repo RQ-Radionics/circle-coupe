@@ -86,6 +86,18 @@ LDFLAGS += --no-enum-size-warning
 # Allow multiple definitions (Circle and newlib both define strtoul, __cxa_guard, etc.)
 LDFLAGS += --allow-multiple-definition
 
+# ---- Rebuild libsimcoupe.a (and SDL3 libs) via CMake whenever sources change ----
+# This ensures 'make' picks up edits to Frame.cpp, SDL20.cpp, Input.cpp, etc.
+# without needing a manual 'cmake --build' first.
+CMAKE_SOURCES := $(shell find ../simcoupe/Base ../simcoupe/SDL ../src -name '*.cpp' -o -name '*.c' -o -name '*.h' 2>/dev/null)
+
+$(SIMCOUPE_LIB): $(CMAKE_SOURCES)
+	@echo "  CMAKE $(CMAKE_BUILD)"
+	cmake --build $(CMAKE_BUILD) --parallel $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
+# Make the kernel depend on the CMake lib so linking re-runs after cmake rebuild
+$(TARGET).img: $(SIMCOUPE_LIB)
+
 # ---- posix_stubs.cpp: needs Circle types FIRST to avoid time_t conflict ----
 posix_stubs.o: posix_stubs.cpp
 	@echo "  CPP   $@"
