@@ -21,8 +21,9 @@ dtoverlay=disable-bt
 enable_uart=1
 
 # ---- GPU/Memory ----
-# Minimum GPU memory (Circle uses CPU-side framebuffer)
-gpu_mem=64
+# Enough GPU memory for CScreenDevice (text console) + CBcmFrameBuffer (1280x720x32x2)
+# 1280*720*4*2 = ~7.4MB + text console overhead → 128MB is safe
+gpu_mem=128
 
 # ---- Misc ----
 # Disable rainbow splash screen for faster boot

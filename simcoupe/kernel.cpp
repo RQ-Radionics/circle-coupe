@@ -1,13 +1,7 @@
-// kernel.cpp — SimCoupe Circle kernel (no SDL)
+// kernel.cpp — SimCoupe Circle kernel (no SDL, monocore)
 //
-// Core 0: Initialize() USB/IRQ/timer → Run() IO loop forever
-// Core 1: Run(1) → circle_fb_init + Main::Init + CPU::Run (never returns)
-
-// kernel.h includes Circle headers which define time_t (signed long).
-// Guard newlib from redefining it as __int_least64_t (GCC 15 conflict).
-#include <circle/types.h>
-#define __time_t_defined
-#define _TIME_T_DECLARED
+// Identical structure to the working kernel (75227bc) but calls
+// Main::Init() + CPU::Run() instead of SimCoupeMain() (which used SDL).
 
 #include "kernel.h"
 
@@ -15,23 +9,21 @@
 #include <circle/input/mouse.h>
 #include <string.h>
 
-// Platform init functions (C linkage)
 extern "C" void circle_audio_set_interrupt(void *pInterrupt);
 extern "C" int  fatfs_mount(void);
 extern "C" int  circle_fb_init(unsigned w, unsigned h, unsigned depth);
 
-// SimCoupe entry points — declared without including SimCoupe.h
-// (SimCoupe.h pulls in C++ stdlib which conflicts with Circle build flags)
-namespace Main { bool Init(int argc, char *argv[]); void Exit(); }
-namespace CPU  { void Run(); void Exit(); }
-
-// Input ring buffer (defined in Circle/Input.cpp)
+// circle_simcoupe_key is defined in Circle/Input.cpp
 extern "C" void circle_simcoupe_key(unsigned hid_scancode, int pressed,
                                      int mod_shift, int mod_ctrl, int mod_alt);
 
+// SimCoupe entry points (no SDL)
+namespace Main { bool Init(int argc, char *argv[]); void Exit(); }
+namespace CPU  { void Run(); void Exit(); }
+
 static const char FromKernel[] = "kernel";
 
-// ---- USB keyboard handler -----------------------------------------------
+// ---- USB keyboard handler ----
 
 static unsigned char s_prev_mod = 0;
 static unsigned char s_prev_keys[6] = {0};
@@ -74,13 +66,10 @@ static void KeyStatusHandlerRaw(unsigned char ucMod,
     memcpy(s_prev_keys, Keys, 6);
 }
 
-// ---- CKernel ------------------------------------------------------------
+// ---- CKernel ----------------------------------------------------------------
 
 CKernel::CKernel()
-:   CMultiCoreSupport(&m_Memory),
-    m_Memory(),
-    m_bLaunch(false),
-    m_Serial(),
+:   m_Serial(),
     m_Timer(&m_Interrupt),
     m_Logger(m_Options.GetLogLevel(), &m_Timer),
     m_Scheduler(),
@@ -108,17 +97,13 @@ boolean CKernel::Initialize()
 
     circle_audio_set_interrupt(&m_Interrupt);
 
-    // Initialize framebuffer on core 0 (GPU mailbox must be core 0)
+    // Init framebuffer (timer and interrupts must be ready first)
     if (bOK && circle_fb_init(1280, 720, 32) != 0)
         m_Logger.Write(FromKernel, LogWarning, "Framebuffer init failed");
-
-    // Start secondary cores — Run(1) will spin on m_bLaunch
-    if (bOK) bOK = CMultiCoreSupport::Initialize();
 
     return bOK;
 }
 
-// Core 0: IO loop
 TShutdownMode CKernel::Run()
 {
     m_USBHCI.UpdatePlugAndPlay();
@@ -128,33 +113,6 @@ TShutdownMode CKernel::Run()
     if (pKeyboard)
         pKeyboard->RegisterKeyStatusHandlerRaw(KeyStatusHandlerRaw, FALSE, nullptr);
 
-    // Signal core 1 to start
-    asm volatile("dmb" ::: "memory");
-    m_bLaunch = true;
-    asm volatile("dmb" ::: "memory");
-
-    // Loop: service USB and scheduler forever
-    while (true)
-    {
-        m_Scheduler.Yield();
-        m_USBHCI.UpdatePlugAndPlay();
-    }
-
-    return ShutdownHalt;
-}
-
-// Core 1: emulator
-void CKernel::Run(unsigned nCore)
-{
-    if (nCore != 1) {
-        while (true) asm volatile("wfe");
-    }
-
-    // Wait for core 0 to finish Initialize() + USB setup
-    while (!m_bLaunch)
-        asm volatile("dmb" ::: "memory");
-
-    // Boot SimCoupe — no SDL, direct hardware access
     static const char *argv0 = "simcoupe";
     static char *argv[] = { const_cast<char*>(argv0), nullptr };
 
@@ -162,6 +120,5 @@ void CKernel::Run(unsigned nCore)
         CPU::Run();
 
     Main::Exit();
-
-    while (true) asm volatile("wfe");
+    return ShutdownHalt;
 }
