@@ -20,7 +20,7 @@
 CIRCLEHOME = ../circle
 
 # ---- Object files (Circle entry points only) ----
-OBJS = main.o kernel.o posix_stubs.o fatfs_posix.o ../kernel/syscalls.o
+OBJS = main.o kernel.o posix_stubs.o fatfs_posix.o ../kernel/syscalls.o circle_fb.o
 
 # ---- CMake build output ----
 CMAKE_BUILD = ../build
@@ -28,6 +28,7 @@ SDL3_LIB_DIR = $(CMAKE_BUILD)/src
 SIMCOUPE_LIB = $(CMAKE_BUILD)/simcoupe/libsimcoupe.a
 
 # ---- Libraries to link ----
+# No SDL3 — direct Circle port
 LIBS = \
 	$(SIMCOUPE_LIB) \
 	$(CMAKE_BUILD)/simcoupe/libwhereami.a \
@@ -35,11 +36,6 @@ LIBS = \
 	$(CMAKE_BUILD)/_deps/fmt-build/libfmt.a \
 	$(CMAKE_BUILD)/_deps/resid-build/libresid.a \
 	$(CMAKE_BUILD)/_deps/spectrum-build/libspectrum.a \
-	$(SDL3_LIB_DIR)/libSDL3-circle.a \
-	$(SDL3_LIB_DIR)/video/libSDL3-circle-video.a \
-	$(SDL3_LIB_DIR)/audio/libSDL3-circle-audio.a \
-	$(SDL3_LIB_DIR)/timer/libSDL3-circle-timer.a \
-	$(SDL3_LIB_DIR)/thread/libSDL3-circle-thread.a \
 	$(CIRCLEHOME)/addon/SDCard/libsdcard.a \
 	$(CIRCLEHOME)/addon/fatfs/libfatfs.a \
 	$(CIRCLEHOME)/lib/sched/libsched.a \
@@ -52,11 +48,14 @@ LIBS = \
 # ---- Include paths for Circle entry points ----
 INCLUDE += \
 	-I. \
-	-I../SDL3/include \
-	-I../SDL3/include/SDL3 \
+	-I./Base \
+	-I./SDL \
+	-I../src/video/circle \
 	-I../src/include \
 	-I../circle/addon/fatfs \
-	-I../circle/addon/SDCard
+	-I../circle/addon/SDCard \
+	-I../circle/addon/vc4 \
+	-I$(CMAKE_BUILD)/simcoupe
 
 # ---- Defines ----
 CFLAGS += -fno-short-enums
@@ -89,7 +88,7 @@ LDFLAGS += --allow-multiple-definition
 # ---- Rebuild libsimcoupe.a (and SDL3 libs) via CMake whenever sources change ----
 # This ensures 'make' picks up edits to Frame.cpp, SDL20.cpp, Input.cpp, etc.
 # without needing a manual 'cmake --build' first.
-CMAKE_SOURCES := $(shell find ../simcoupe/Base ../simcoupe/SDL ../src -name '*.cpp' -o -name '*.c' -o -name '*.h' 2>/dev/null)
+CMAKE_SOURCES := $(shell find ../simcoupe/Base ../simcoupe/Circle ../simcoupe/SDL ../src/video/circle -name '*.cpp' -o -name '*.c' -o -name '*.h' 2>/dev/null)
 
 $(SIMCOUPE_LIB): $(CMAKE_SOURCES)
 	@echo "  CMAKE $(CMAKE_BUILD)"
@@ -105,6 +104,11 @@ posix_stubs.o: posix_stubs.cpp
 
 # ---- fatfs_posix.cpp: FatFs POSIX shim (mount, fopen/fread via FatFs) ----
 fatfs_posix.o: ../src/fatfs_posix.cpp
+	@echo "  CPP   $@"
+	$(CPP) $(CPPFLAGS) $(INCLUDE) -c $< -o $@
+
+# ---- circle_fb: framebuffer backend (double-buffered CBcmFrameBuffer) ----
+circle_fb.o: ../src/video/circle/SDL_circlefb.cpp
 	@echo "  CPP   $@"
 	$(CPP) $(CPPFLAGS) $(INCLUDE) -c $< -o $@
 

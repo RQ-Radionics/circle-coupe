@@ -74,9 +74,13 @@
 #include <set>
 #include <optional>
 #include <variant>
+#ifndef __circle__
 #include <thread>
+#endif
 #include <numeric>
+#ifndef __circle__
 #include <regex>
+#endif
 #include <fstream>
 
 #ifdef HAVE_STD_FILESYSTEM

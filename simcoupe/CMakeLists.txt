@@ -17,10 +17,13 @@ if (NOT CMAKE_BUILD_TYPE)
 endif()
 
 set(BUILD_BACKEND "auto" CACHE STRING "Back-end framework for video/sound/input")
-set_property(CACHE BUILD_BACKEND PROPERTY STRINGS auto win32 sdl)
+set_property(CACHE BUILD_BACKEND PROPERTY STRINGS auto win32 sdl circle)
 
 if (BUILD_BACKEND STREQUAL "win32" OR (BUILD_BACKEND STREQUAL "auto" AND WIN32))
   set(BUILD_WIN32 1)
+elseif (BUILD_BACKEND STREQUAL "circle" OR
+        (BUILD_BACKEND STREQUAL "auto" AND CMAKE_SYSTEM_NAME STREQUAL "Generic"))
+  set(BUILD_CIRCLE 1)
 elseif (BUILD_BACKEND STREQUAL "sdl" OR BUILD_BACKEND STREQUAL "auto")
   set(BUILD_SDL 1)
 else()
@@ -154,6 +157,22 @@ elseif (BUILD_SDL)
     set(SOURCE_FILES ${SOURCE_FILES} kernel.cpp)
     set(HEADER_FILES ${HEADER_FILES} kernel.h)
   endif()
+elseif (BUILD_CIRCLE)
+  # Circle bare-metal: direct hardware port (no SDL)
+  set(CIRCLE_CPP_FILES
+    Circle/Audio.cpp
+    Circle/Input.cpp
+    Circle/OSD.cpp
+    Circle/Stubs.cpp
+    Circle/UI.cpp
+    Circle/Video.cpp
+    kernel.cpp)
+  set(CIRCLE_H_FILES
+    SDL/Audio.h SDL/IDEDisk.h SDL/Input.h SDL/MIDI.h SDL/OSD.h SDL/UI.h
+    kernel.h)
+
+  set(SOURCE_FILES ${SOURCE_FILES} ${CIRCLE_CPP_FILES})
+  set(HEADER_FILES ${HEADER_FILES} ${CIRCLE_H_FILES})
 endif()
 
 if (WIN32)
@@ -392,6 +411,23 @@ endif()
 
 if (BUILD_WIN32)
   target_link_libraries(${PROJECT_NAME} PRIVATE dinput8.lib dxguid.lib)
+elseif (BUILD_CIRCLE)
+  # Circle bare-metal direct port: no SDL, direct CBcmFrameBuffer + PWM audio
+  message(STATUS "SimCoupe: Circle direct port (no SDL)")
+  target_include_directories(${PROJECT_NAME} PRIVATE
+    SDL                          # SDL/*.h interface headers (Audio.h, Input.h, etc.)
+    ${CIRCLE_HOME}/include
+    ${CIRCLE_HOME}/addon
+    ${CIRCLE_HOME}/addon/fatfs
+    ${CIRCLE_HOME}/addon/SDCard
+    ${CIRCLE_HOME}/lib/sched
+    ${CMAKE_SOURCE_DIR}/../src/video/circle  # circle_fb_* headers
+  )
+  # circle_fb_* lives in src/video/circle/SDL_circlefb.cpp — compile it directly
+  # CMAKE_CURRENT_SOURCE_DIR = simcoupe/, so go up one level to find src/
+  target_sources(${PROJECT_NAME} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/video/circle/SDL_circlefb.cpp
+  )
 elseif (BUILD_SDL)
   if (CMAKE_SYSTEM_NAME STREQUAL "Generic")
     # Circle bare-metal: use our SDL3-circle static library (built in src/)
@@ -455,8 +491,7 @@ endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE Base)
 
-# On Circle bare-metal: SDL3 requires sizeof(enum)==sizeof(int) (-fno-short-enums),
-# and SimCoupe uses try/catch in a few places (-fexceptions overrides toolchain -fno-exceptions).
+# On Circle bare-metal: -fno-short-enums and -fexceptions are needed.
 if (CMAKE_SYSTEM_NAME STREQUAL "Generic")
   target_compile_options(${PROJECT_NAME} PRIVATE -fno-short-enums -fexceptions)
 endif()
@@ -468,6 +503,8 @@ if (BUILD_WIN32)
   target_link_libraries(${PROJECT_NAME} PRIVATE winmm comctl32 shlwapi)
 elseif (BUILD_SDL)
   target_include_directories(${PROJECT_NAME} PRIVATE SDL)
+elseif (BUILD_CIRCLE)
+  target_include_directories(${PROJECT_NAME} PRIVATE SDL)  # reuse SDL/*.h interface headers
 endif()
 
 # GCC 8 needs explicit linkage to 'libstc++fs' to get support for the filesystem utilities

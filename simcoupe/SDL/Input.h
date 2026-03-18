@@ -27,7 +27,11 @@ public:
     static void Exit();
 
     static void Update();
+#ifndef __circle__
     static bool FilterEvent(SDL_Event* pEvent_);
+#else
+    static bool FilterEvent(void* pEvent_);
+#endif
 
     static bool IsMouseAcquired();
     static void AcquireMouse(bool fAcquire_ = true);
