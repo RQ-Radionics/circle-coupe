@@ -360,9 +360,7 @@ void Sync()
         } else {
             unsigned long elapsed = now_us - last_frame_us;
             if (elapsed < FRAME_US) {
-                unsigned long remaining = FRAME_US - elapsed;
-                if (remaining > 500)
-                    circle_sleep((long)(remaining - 500));
+                // No sleep — just skip drawing until time arrives
                 draw_frame = false;
             } else {
                 draw_frame = true;

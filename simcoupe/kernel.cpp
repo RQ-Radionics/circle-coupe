@@ -1,7 +1,11 @@
-// kernel.cpp — SimCoupe Circle kernel (no SDL, monocore)
+// kernel.cpp — SimCoupe Circle kernel (no SDL, multicore)
 //
-// Identical structure to the working kernel (75227bc) but calls
-// Main::Init() + CPU::Run() instead of SimCoupeMain() (which used SDL).
+// Core 0: Initialize() → Run() — USB host + scheduler loop
+// Core 1: Run(1) — Main::Init() + CPU::Run() — Z80 emulation
+
+#include <circle/types.h>
+#define __time_t_defined
+#define _TIME_T_DECLARED
 
 #include "kernel.h"
 
@@ -9,22 +13,18 @@
 #include <circle/input/mouse.h>
 #include <string.h>
 
+// Platform init functions (C linkage)
 extern "C" void circle_audio_set_interrupt(void *pInterrupt);
 extern "C" int  fatfs_mount(void);
-extern "C" int      circle_fb_init(unsigned w, unsigned h, unsigned depth);
-extern "C" unsigned circle_fb_get_width(void);
-extern "C" unsigned circle_fb_get_height(void);
-extern "C" unsigned circle_fb_get_pitch(void);
-extern "C" void    *circle_fb_get_buffer(void);
-extern "C" void     circle_fb_flip(void);
+extern "C" int  circle_fb_init(unsigned w, unsigned h, unsigned depth);
 
-// circle_simcoupe_key is defined in Circle/Input.cpp
-extern "C" void circle_simcoupe_key(unsigned hid_scancode, int pressed,
-                                     int mod_shift, int mod_ctrl, int mod_alt);
-
-// SimCoupe entry points (no SDL)
+// SimCoupe entry points
 namespace Main { bool Init(int argc, char *argv[]); void Exit(); }
 namespace CPU  { void Run(); void Exit(); }
+
+// Input ring buffer (defined in Circle/Input.cpp)
+extern "C" void circle_simcoupe_key(unsigned hid_scancode, int pressed,
+                                     int mod_shift, int mod_ctrl, int mod_alt);
 
 static const char FromKernel[] = "kernel";
 
@@ -74,7 +74,10 @@ static void KeyStatusHandlerRaw(unsigned char ucMod,
 // ---- CKernel ----------------------------------------------------------------
 
 CKernel::CKernel()
-:   m_Serial(),
+:   CMultiCoreSupport(&m_Memory),
+    m_Memory(),
+    m_bLaunch(false),
+    m_Serial(),
     m_Timer(&m_Interrupt),
     m_Logger(m_Options.GetLogLevel(), &m_Timer),
     m_Scheduler(),
@@ -102,12 +105,17 @@ boolean CKernel::Initialize()
 
     circle_audio_set_interrupt(&m_Interrupt);
 
+    // Init framebuffer on core 0 (GPU mailbox must be core 0)
     if (bOK && circle_fb_init(1280, 720, 32) != 0)
         m_Logger.Write(FromKernel, LogWarning, "Framebuffer init failed");
+
+    // Start secondary cores — Run(1) spins on m_bLaunch
+    if (bOK) bOK = CMultiCoreSupport::Initialize();
 
     return bOK;
 }
 
+// Core 0: USB host + scheduler loop
 TShutdownMode CKernel::Run()
 {
     m_USBHCI.UpdatePlugAndPlay();
@@ -117,23 +125,41 @@ TShutdownMode CKernel::Run()
     if (pKeyboard)
         pKeyboard->RegisterKeyStatusHandlerRaw(KeyStatusHandlerRaw, FALSE, nullptr);
 
+    // Signal core 1 to start
+    asm volatile("dmb" ::: "memory");
+    m_bLaunch = true;
+    asm volatile("dmb" ::: "memory");
+
+    // Core 0 loops forever: USB plug-and-play + scheduler
+    while (true)
+    {
+        m_Scheduler.Yield();
+        m_USBHCI.UpdatePlugAndPlay();
+    }
+
+    return ShutdownHalt;
+}
+
+// Core 1: Z80 emulation
+void CKernel::Run(unsigned nCore)
+{
+    if (nCore != 1) {
+        // Cores 2, 3: park
+        while (true) asm volatile("wfe");
+    }
+
+    // Wait for core 0 to finish Initialize + USB setup
+    while (!m_bLaunch)
+        asm volatile("dmb" ::: "memory");
+
+    // Run SimCoupe
     static const char *argv0 = "simcoupe";
     static char *argv[] = { const_cast<char*>(argv0), nullptr };
-
-    // Force-flip framebuffer every 20ms so we can see what the emulator draws
-    // even if circle_fb_flip() in Video::Update() doesn't work correctly.
-    // This runs in the kernel loop interleaved with USB polling.
-    unsigned long long last_flip = 0;
-
-    // Start emulator — it will draw into the back buffer via Video::Update()
-    // We don't call Main::Init/CPU::Run here — instead run them inline so we
-    // can interleave the flip loop.
-    // Actually: just do the flip in a busy loop before calling Main::Init
-    // to verify the framebuffer path works independently.
 
     if (Main::Init(1, argv))
         CPU::Run();
 
     Main::Exit();
-    return ShutdownHalt;
+
+    while (true) asm volatile("wfe");
 }
