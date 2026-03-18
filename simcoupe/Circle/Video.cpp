@@ -28,16 +28,17 @@ extern "C" {
 }
 
 // ---- Palette (SAM hardware → XRGB8888) ----------------------------------
-// Built each frame from IO::Palette() exactly like SDL20.cpp does.
+// Built each frame from IO::Palette(). Uses 256 entries (indices 128-255
+// mirror 0-127) because FrameBuffer pixel values can exceed NUM_PALETTE_COLOURS.
 
-static uint32_t s_palette[NUM_PALETTE_COLOURS];
+static uint32_t s_palette[256];
 
 static void BuildPalette()
 {
     auto hw = IO::Palette();
-    for (size_t i = 0; i < hw.size() && i < NUM_PALETTE_COLOURS; i++)
+    for (int i = 0; i < 256; i++)
     {
-        auto& c = hw[i];
+        auto& c = hw[i % NUM_PALETTE_COLOURS];
         s_palette[i] = (0xFFu << 24) |
                        ((uint32_t)c.red   << 16) |
                        ((uint32_t)c.green <<  8) |

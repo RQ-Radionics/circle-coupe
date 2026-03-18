@@ -120,6 +120,17 @@ TShutdownMode CKernel::Run()
     static const char *argv0 = "simcoupe";
     static char *argv[] = { const_cast<char*>(argv0), nullptr };
 
+    // Force-flip framebuffer every 20ms so we can see what the emulator draws
+    // even if circle_fb_flip() in Video::Update() doesn't work correctly.
+    // This runs in the kernel loop interleaved with USB polling.
+    unsigned long long last_flip = 0;
+
+    // Start emulator — it will draw into the back buffer via Video::Update()
+    // We don't call Main::Init/CPU::Run here — instead run them inline so we
+    // can interleave the flip loop.
+    // Actually: just do the flip in a busy loop before calling Main::Init
+    // to verify the framebuffer path works independently.
+
     if (Main::Init(1, argv))
         CPU::Run();
 

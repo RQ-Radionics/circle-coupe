@@ -23,6 +23,11 @@
 
 #ifdef __circle__
 extern "C" unsigned long long circle_get_clock_ticks64(void);
+extern "C" void    *circle_fb_get_buffer(void);
+extern "C" unsigned circle_fb_get_width(void);
+extern "C" unsigned circle_fb_get_height(void);
+extern "C" unsigned circle_fb_get_pitch(void);
+extern "C" void     circle_fb_flip(void);
 #endif
 
 #include "Audio.h"
