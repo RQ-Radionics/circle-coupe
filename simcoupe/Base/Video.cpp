@@ -37,7 +37,7 @@ bool Init()
     Exit();
 
     s_pVideo = UI::CreateVideo();
-    if (!s_pVideo)
+    if (!s_pVideo || !s_pVideo->Init())
         Message(MsgType::Fatal, "Video initialisation failed");
 
     return s_pVideo != nullptr;

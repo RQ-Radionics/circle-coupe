@@ -155,8 +155,13 @@ void Run()
         if (g_fPaused)
             continue;
 
+#ifndef __circle__
         if (!Debug::IsActive() && !GUI::IsModal())
             ExecuteChunk();
+#else
+        // Skip ExecuteChunk temporarily to test if Frame::End() is reached
+        CPU::frame_cycles = CPU_CYCLES_PER_FRAME;
+#endif
 
         Frame::End();
 
