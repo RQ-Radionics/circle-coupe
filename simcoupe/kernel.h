@@ -19,7 +19,6 @@
 #include <circle/sched/scheduler.h>
 #include <circle/usb/usbhcidevice.h>
 #include <circle/multicore.h>
-#include <circle/spinlock.h>
 #include <circle/types.h>
 
 // SD card + FatFs
@@ -55,7 +54,7 @@ private:
     CUSBHCIDevice       m_USBHCI;
     CEMMCDevice         m_EMMC;
 
-    // Synchronization: core 1 waits until core 0 sets this flag
-    volatile bool       m_bLaunch = false;
-    CSpinLock           m_LaunchLock;
+    // Synchronization: core 1 spins on this until core 0 sets it
+    // Simple volatile - no spinlock needed, only written once by core 0
+    volatile bool       m_bLaunch;
 };

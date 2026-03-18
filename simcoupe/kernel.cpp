@@ -90,6 +90,7 @@ static void MouseStatusHandler(unsigned /*nButtons*/,
 CKernel::CKernel()
 :   CMultiCoreSupport (&m_Memory),
     m_Memory (),
+    m_bLaunch (false),
     m_Serial (),
     m_Timer  (&m_Interrupt),
     m_Logger (m_Options.GetLogLevel(), &m_Timer),
@@ -142,10 +143,10 @@ TShutdownMode CKernel::Run()
     if (pMouse)
         pMouse->RegisterStatusHandler(MouseStatusHandler, nullptr);
 
-    // Signal core 1 to start the emulator
-    m_LaunchLock.Acquire();
+    // Signal core 1 to start the emulator - data barrier ensures visibility
+    asm volatile("dmb" ::: "memory");
     m_bLaunch = true;
-    m_LaunchLock.Release();
+    asm volatile("dmb" ::: "memory");
 
     // Core 0 loops forever servicing USB and scheduler
     while (true)
@@ -166,13 +167,8 @@ void CKernel::Run(unsigned nCore)
     }
 
     // Spin until core 0 completes Initialize() and USB setup
-    while (true) {
-        m_LaunchLock.Acquire();
-        bool ready = m_bLaunch;
-        m_LaunchLock.Release();
-        if (ready) break;
-        // Brief pause to avoid hammering the bus
-        for (volatile int i = 0; i < 1000; i++) { }
+    while (!m_bLaunch) {
+        asm volatile("dmb" ::: "memory");
     }
 
     static const char *argv[] = {
