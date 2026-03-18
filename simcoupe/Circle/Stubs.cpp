@@ -60,27 +60,18 @@ extern "C" void circle_delay_us(unsigned long long us)
         CTimer::Get()->usDelay((unsigned)us);
 }
 
-// Returns raw CNTPCT low 32 bits at 19.2MHz (USE_PHYSICAL_COUNTER AArch32).
-// Frame::Sync() reads CNTFRQ to compute FRAME_TICKS correctly.
+// CTimer::GetClockTicks() = microseconds, 32-bit, 1MHz ARM System Timer.
+// With NO_PHYSICAL_COUNTER this reads ARM_SYSTIMER_CLO directly — same as bmc64.
 extern "C" unsigned long circle_get_ticks(void)
 {
-#if defined(USE_PHYSICAL_COUNTER) && AARCH == 32
-    unsigned long nLow, nHigh;
-    asm volatile ("mrrc p15, 0, %0, %1, c14" : "=r"(nLow), "=r"(nHigh));
-    return nLow;
-#else
     return (unsigned long)CTimer::GetClockTicks();
-#endif
 }
 
-// Sleep for n microseconds using circle_get_clock_ticks64() as reference.
-// This is the only timer we know works correctly on AArch32 RPi3.
+// Sleep n microseconds. SimpleusDelay spins on ARM System Timer — allows IRQs.
 extern "C" void circle_sleep(long us)
 {
-    if (us <= 0 || us >= 2000000L) return;
-    unsigned long long start = circle_get_clock_ticks64();
-    unsigned long long end   = start + (unsigned long long)us;
-    while (circle_get_clock_ticks64() < end) { }
+    if (us > 0 && us < 2000000L)
+        CTimer::SimpleusDelay((unsigned long)us);
 }
 
 extern "C" void circle_yield(void)

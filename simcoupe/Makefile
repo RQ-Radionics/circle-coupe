@@ -58,7 +58,7 @@ INCLUDE += \
 	-I$(CMAKE_BUILD)/simcoupe
 
 # ---- Defines ----
-CFLAGS += -fno-short-enums
+CFLAGS += -fno-short-enums -DNO_PHYSICAL_COUNTER
 
 # Disable dependency generation
 CHECK_DEPS = 0
