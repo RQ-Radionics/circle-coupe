@@ -126,4 +126,20 @@ void circle_fb_update(void)
     circle_fb_flip();
 }
 
+/* Set a single palette entry (8-bit mode only) */
+void circle_fb_set_palette(unsigned index, unsigned r, unsigned g, unsigned b)
+{
+    if (!s_pFrameBuffer || index >= 256) return;
+    // RGBA format: Circle's SetPalette32 expects 0xAARRGGBB
+    u32 rgba = (0xFF << 24) | (r << 16) | (g << 8) | b;
+    s_pFrameBuffer->SetPalette32((u8)index, rgba);
+}
+
+/* Apply all palette changes to the hardware */
+void circle_fb_update_palette(void)
+{
+    if (s_pFrameBuffer)
+        s_pFrameBuffer->UpdatePalette();
+}
+
 } /* extern "C" */

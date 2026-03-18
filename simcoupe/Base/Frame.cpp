@@ -25,7 +25,6 @@
 extern "C" unsigned long long circle_get_clock_ticks64(void);
 extern "C" unsigned long      circle_get_ticks(void);
 extern "C" void               circle_sleep(long us);
-unsigned long g_blit_avg_us = 0;  // set by Video::Update()
 extern "C" void    *circle_fb_get_buffer(void);
 extern "C" unsigned circle_fb_get_width(void);
 extern "C" unsigned circle_fb_get_height(void);
@@ -383,7 +382,7 @@ void Sync()
             float elapsed_s = (float)(now_us - last_profiled_us) / 1000000.0f;
             float fps = (float)num_frames / elapsed_s;
             float percent = fps / ACTUAL_FRAMES_PER_SECOND * 100.0f;
-            profile_text = fmt::format("{:.0f}% b={}us", percent, g_blit_avg_us);
+            profile_text = fmt::format("{:.0f}%", percent);
         }
         last_profiled_us = now_us;
         num_frames = 0;
