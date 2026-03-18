@@ -357,8 +357,12 @@ void Sync()
     {
         if (last_profiled)
         {
-            auto fps = 1s / ((now - *last_profiled) / static_cast<float>(num_frames));
-            auto percent = fps / ACTUAL_FRAMES_PER_SECOND * 100;
+            // Calculate as plain floats to avoid chrono duration arithmetic
+            // producing a duration type instead of a scalar, which causes
+            // fmt::format to receive a duration object and print "0%".
+            float elapsed_s = std::chrono::duration<float>(now - *last_profiled).count();
+            float fps = static_cast<float>(num_frames) / elapsed_s;
+            float percent = fps / ACTUAL_FRAMES_PER_SECOND * 100.0f;
             profile_text = fmt::format("{:.0f}%", percent);
         }
 
