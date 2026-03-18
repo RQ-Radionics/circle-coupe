@@ -28,6 +28,8 @@ extern "C" unsigned circle_fb_get_width(void);
 extern "C" unsigned circle_fb_get_height(void);
 extern "C" unsigned circle_fb_get_pitch(void);
 extern "C" void     circle_fb_flip(void);
+extern "C" void     circle_delay_us(unsigned long long us);
+extern "C" void     circle_yield(void);
 #endif
 
 #include "Audio.h"
@@ -354,12 +356,18 @@ void Sync()
         if (last_frame_us == 0) {
             last_frame_us = now_us;
         } else {
-            // Wait until next frame boundary
-            unsigned long long next = last_frame_us + FRAME_US;
-            if (now_us < next) {
-                while (circle_get_clock_ticks64() < next) { }
-            }
-            last_frame_us = (now_us < next) ? next : now_us;
+            // Wait until next frame boundary, yielding to scheduler so USB
+        // interrupt callbacks can run (prevents losing keyboard input).
+        unsigned long long next = last_frame_us + FRAME_US;
+        if (now_us < next) {
+            unsigned long long remaining = next - now_us;
+            // Sleep most of the wait via usDelay, then yield remaining
+            if (remaining > 2000)
+                circle_delay_us(remaining - 1000);
+            while (circle_get_clock_ticks64() < next)
+                circle_yield();
+        }
+        last_frame_us = (now_us < next) ? next : now_us;
         }
         draw_frame = true;
     }

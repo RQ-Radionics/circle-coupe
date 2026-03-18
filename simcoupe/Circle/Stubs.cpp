@@ -8,6 +8,11 @@
 #include "SimCoupe.h"
 #include "MIDI.h"
 
+#undef TRUE
+#undef FALSE
+#include <circle/timer.h>
+#include <circle/sched/scheduler.h>
+
 // ---- MIDI stubs ----
 
 MidiDevice::MidiDevice() {}
@@ -47,4 +52,16 @@ extern "C" void circle_delay_ns(unsigned long long ns)
 {
     if (ns > 0 && ns < 2000000000ULL)
         CTimer::Get()->usDelay((unsigned)(ns / 1000 + 1));
+}
+
+extern "C" void circle_delay_us(unsigned long long us)
+{
+    if (us > 0 && us < 2000000ULL)
+        CTimer::Get()->usDelay((unsigned)us);
+}
+
+extern "C" void circle_yield(void)
+{
+    if (CScheduler::IsActive())
+        CScheduler::Get()->Yield();
 }
