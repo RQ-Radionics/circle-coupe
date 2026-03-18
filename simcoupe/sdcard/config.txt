@@ -21,9 +21,13 @@ dtoverlay=disable-bt
 enable_uart=1
 
 # ---- GPU/Memory ----
-# Enough GPU memory for CScreenDevice (text console) + CBcmFrameBuffer (1280x720x32x2)
-# 1280*720*4*2 = ~7.4MB + text console overhead → 128MB is safe
+# 1280*720*4*2 (double-buffer) = ~7.4MB + CScreenDevice overhead
 gpu_mem=128
+
+# ---- Circle screen parameters ----
+# Required for CKernelOptions::GetWidth/Height() and CScreenDevice
+screen_width=1280
+screen_height=720
 
 # ---- Misc ----
 # Disable rainbow splash screen for faster boot

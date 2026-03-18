@@ -12,6 +12,7 @@
 #include "Frame.h"
 #include "GUI.h"
 #include "Options.h"
+#include "SAMIO.h"
 
 // circle_fb API (C linkage, from SDL_circlefb.cpp)
 extern "C" {
@@ -26,25 +27,21 @@ extern "C" {
     unsigned long long circle_get_clock_ticks64(void);
 }
 
-// ---- Palette (SAM 128-colour → XRGB8888) --------------------------------
+// ---- Palette (SAM hardware → XRGB8888) ----------------------------------
+// Built each frame from IO::Palette() exactly like SDL20.cpp does.
 
-static uint32_t s_palette[256];
+static uint32_t s_palette[NUM_PALETTE_COLOURS];
 
 static void BuildPalette()
 {
-    // SAM Coupe uses a 3-bit RGB palette (8 base colours × brightness)
-    // Colour index: bits 7:6=unused 5:4=G 3:2=R 1:0=B (but each 2 bits → 0/1)
-    // Actually SimCoupe uses an internal 256-entry palette populated by
-    // FrameBuffer::SetPalette. We use the same mapping as SDL20.cpp.
-    for (int i = 0; i < 256; i++)
+    auto hw = IO::Palette();
+    for (size_t i = 0; i < hw.size() && i < NUM_PALETTE_COLOURS; i++)
     {
-        // SAM palette: IIGRB where I=intensity, G/R/B = colour bits
-        // bits 1:0 = blue, bits 3:2 = red, bits 5:4 = green, bit 6 = bright
-        int bright = (i & 0x40) ? 255 : 128;
-        int r = (i & 0x04) ? bright : 0;
-        int g = (i & 0x10) ? bright : 0;
-        int b = (i & 0x01) ? bright : 0;
-        s_palette[i] = (uint32_t)((r << 16) | (g << 8) | b);
+        auto& c = hw[i];
+        s_palette[i] = (0xFFu << 24) |
+                       ((uint32_t)c.red   << 16) |
+                       ((uint32_t)c.green <<  8) |
+                        (uint32_t)c.blue;
     }
 }
 
@@ -58,7 +55,7 @@ public:
 
     bool Init() override
     {
-        BuildPalette();
+        // Palette built per-frame in Update() from IO::Palette()
 
         // Framebuffer already initialised from kernel.cpp (core 0).
         // Just verify it's up.
@@ -87,6 +84,9 @@ public:
 
     void Update(const FrameBuffer& fb) override
     {
+        // Rebuild palette each frame from SAM hardware state
+        BuildPalette();
+
         unsigned fb_w = m_fb_w;
         unsigned fb_h = m_fb_h;
         if (fb_w == 0 || fb_h == 0) return;

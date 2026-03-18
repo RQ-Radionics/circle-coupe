@@ -81,24 +81,49 @@ CKernel::CKernel()
 
 CKernel::~CKernel() {}
 
+// Blink ACT LED n times with 200ms on, 200ms off, then 500ms pause
+static void blink(CActLED &led, int n)
+{
+    for (int i = 0; i < n; i++) {
+        led.On();  CTimer::SimpleMsDelay(200);
+        led.Off(); CTimer::SimpleMsDelay(200);
+    }
+    CTimer::SimpleMsDelay(500);
+}
+
 boolean CKernel::Initialize()
 {
     boolean bOK = TRUE;
+
+    // 1 blink = starting Initialize
+    m_ActLED.On(); CTimer::SimpleMsDelay(300); m_ActLED.Off();
+    CTimer::SimpleMsDelay(500);
 
     if (bOK) bOK = m_Serial.Initialize(115200);
     if (bOK) bOK = m_Logger.Initialize(&m_Serial);
     if (bOK) bOK = m_Interrupt.Initialize();
     if (bOK) bOK = m_Timer.Initialize();
+
+    blink(m_ActLED, 2); // 2 blinks = timer OK
+
     if (bOK) bOK = m_USBHCI.Initialize();
+    blink(m_ActLED, bOK ? 3 : 9); // 3=USB OK, 9=FAIL
+
     if (bOK) bOK = m_EMMC.Initialize();
+    blink(m_ActLED, bOK ? 4 : 9); // 4=EMMC OK, 9=FAIL
 
     if (bOK && fatfs_mount() != 0)
         m_Logger.Write(FromKernel, LogWarning, "FatFs mount failed");
 
     circle_audio_set_interrupt(&m_Interrupt);
 
-    // Init framebuffer (timer and interrupts must be ready first)
-    if (bOK && circle_fb_init(1280, 720, 32) != 0)
+    blink(m_ActLED, 5); // 5 blinks = about to init framebuffer
+
+    int fb_ok = circle_fb_init(1280, 720, 32);
+
+    blink(m_ActLED, fb_ok == 0 ? 6 : 8); // 6=FB OK, 8=FB FAIL
+
+    if (fb_ok != 0)
         m_Logger.Write(FromKernel, LogWarning, "Framebuffer init failed");
 
     return bOK;
@@ -106,18 +131,29 @@ boolean CKernel::Initialize()
 
 TShutdownMode CKernel::Run()
 {
+    blink(m_ActLED, 10); // 10 = entering Run()
+
     m_USBHCI.UpdatePlugAndPlay();
+    blink(m_ActLED, 11); // 11 = USB plug&play done
 
     CUSBKeyboardDevice *pKeyboard = (CUSBKeyboardDevice *)
         CDeviceNameService::Get()->GetDevice("ukbd1", FALSE);
     if (pKeyboard)
         pKeyboard->RegisterKeyStatusHandlerRaw(KeyStatusHandlerRaw, FALSE, nullptr);
 
+    blink(m_ActLED, 12); // 12 = keyboard registered, calling Main::Init
+
     static const char *argv0 = "simcoupe";
     static char *argv[] = { const_cast<char*>(argv0), nullptr };
 
-    if (Main::Init(1, argv))
+    bool ok = Main::Init(1, argv);
+    blink(m_ActLED, ok ? 13 : 7); // 13=Main::Init OK, 7=FAIL
+
+    if (ok) {
+        blink(m_ActLED, 14); // 14 = entering CPU::Run
         CPU::Run();
+        blink(m_ActLED, 15); // 15 = CPU::Run returned (should never happen)
+    }
 
     Main::Exit();
     return ShutdownHalt;
