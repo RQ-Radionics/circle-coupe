@@ -10,10 +10,23 @@
 #include <circle/usb/usbkeyboard.h>
 #include <circle/input/mouse.h>
 #include <string.h>
+#include <stdio.h>
 
 extern "C" void circle_audio_set_interrupt(void *pInterrupt);
 extern "C" int  fatfs_mount(void);
 extern "C" int  SimCoupeMain(int argc, char *argv[]);
+
+// ---- Boot log to SD card (/simcoupe/boot.log) ----
+static FILE *s_pBootLog = nullptr;
+
+static void blog(const char *msg)
+{
+    if (s_pBootLog) {
+        fputs(msg, s_pBootLog);
+        fputs("\n", s_pBootLog);
+        fflush(s_pBootLog);
+    }
+}
 
 // Direct SimCoupe key injection -- implemented in SDL/Input.cpp
 extern "C" void circle_simcoupe_key(unsigned hid_scancode, int pressed,
@@ -119,10 +132,17 @@ boolean CKernel::Initialize()
             m_Logger.Write(FromKernel, LogWarning, "FatFs mount failed");
     }
 
+    // Open boot log on SD card for diagnosis
+    s_pBootLog = fopen("/simcoupe/boot.log", "w");
+    blog("=== SimCoupe boot log ===");
+    blog(bOK ? "core0: Initialize OK" : "core0: Initialize FAILED");
+
     circle_audio_set_interrupt(&m_Interrupt);
+    blog("core0: audio interrupt set");
 
     // Start secondary cores FIRST -- Run(1) will spin on m_bLaunch
     if (bOK) bOK = CMultiCoreSupport::Initialize();
+    blog(bOK ? "core0: MultiCore::Initialize OK" : "core0: MultiCore::Initialize FAILED");
 
     return bOK;
 }
@@ -143,10 +163,13 @@ TShutdownMode CKernel::Run()
     if (pMouse)
         pMouse->RegisterStatusHandler(MouseStatusHandler, nullptr);
 
+    blog("core0: USB devices registered, signalling core1");
+
     // Signal core 1 to start the emulator - data barrier ensures visibility
     asm volatile("dmb" ::: "memory");
     m_bLaunch = true;
     asm volatile("dmb" ::: "memory");
+    blog("core0: launch flag set, entering IO loop");
 
     // Core 0 loops forever servicing USB and scheduler
     while (true)
@@ -170,6 +193,7 @@ void CKernel::Run(unsigned nCore)
     while (!m_bLaunch) {
         asm volatile("dmb" ::: "memory");
     }
+    blog("core1: launch received, starting SimCoupeMain");
 
     static const char *argv[] = {
         "simcoupe",
@@ -178,7 +202,9 @@ void CKernel::Run(unsigned nCore)
     };
     int argc = 3;
 
+    blog("core1: calling SimCoupeMain");
     SimCoupeMain(argc, (char **)argv);
+    blog("core1: SimCoupeMain returned");
 
     while (true) { asm volatile("wfe"); }
 }
