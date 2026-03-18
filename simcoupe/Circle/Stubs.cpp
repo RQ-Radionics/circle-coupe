@@ -60,6 +60,19 @@ extern "C" void circle_delay_us(unsigned long long us)
         CTimer::Get()->usDelay((unsigned)us);
 }
 
+// Exactly like bmc64: CTimer::GetClockTicks() = microseconds, 32-bit, 1MHz
+extern "C" unsigned long circle_get_ticks(void)
+{
+    return (unsigned long)CTimer::GetClockTicks();
+}
+
+// Exactly like bmc64: SimpleusDelay - doesn't block IRQs
+extern "C" void circle_sleep(long us)
+{
+    if (us > 0)
+        CTimer::SimpleusDelay((unsigned long)us);
+}
+
 extern "C" void circle_yield(void)
 {
     if (CScheduler::IsActive())

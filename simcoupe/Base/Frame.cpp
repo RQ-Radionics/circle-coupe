@@ -23,12 +23,13 @@
 
 #ifdef __circle__
 extern "C" unsigned long long circle_get_clock_ticks64(void);
+extern "C" unsigned long      circle_get_ticks(void);   // CTimer::GetClockTicks() µs, 32-bit
+extern "C" void               circle_sleep(long us);    // CTimer::SimpleusDelay()
 extern "C" void    *circle_fb_get_buffer(void);
 extern "C" unsigned circle_fb_get_width(void);
 extern "C" unsigned circle_fb_get_height(void);
 extern "C" unsigned circle_fb_get_pitch(void);
 extern "C" void     circle_fb_flip(void);
-extern "C" void     circle_delay_us(unsigned long long us);
 extern "C" void     circle_yield(void);
 #endif
 
@@ -330,10 +331,12 @@ void Sync()
     // this ARM toolchain - elapsed values come out as raw nanosecond
     // counts instead of seconds, breaking all throttle and profiling.
 
-    auto now_us = circle_get_clock_ticks64();   // microseconds since boot
+    // Use CTimer::GetClockTicks() — same as bmc64's circle_get_ticks().
+    // 32-bit microsecond counter at 1MHz. Works correctly on AArch32.
+    unsigned long now_us = circle_get_ticks();
 
-    constexpr unsigned long long FRAME_US =
-        1000000ULL / (unsigned long long)ACTUAL_FRAMES_PER_SECOND; // ~19960 µs
+    constexpr unsigned long FRAME_US =
+        1000000UL / (unsigned long)ACTUAL_FRAMES_PER_SECOND; // ~19960 µs
 
     if ((g_nTurbo & TURBO_BOOT) && !GUI::IsActive())
     {
@@ -341,32 +344,33 @@ void Sync()
     }
     else if (!(g_nTurbo & TURBO_KEY) && !GUI::IsActive() && TurboMode())
     {
-        static unsigned long long last_drawn_us = 0;
-        unsigned long long turbo_frame_us = 1000000ULL / FPS_IN_TURBO_MODE;
+        static unsigned long last_drawn_us = 0;
+        unsigned long turbo_frame_us = 1000000UL / FPS_IN_TURBO_MODE;
         draw_frame = (now_us - last_drawn_us) >= turbo_frame_us;
         if (draw_frame) last_drawn_us = now_us;
     }
     else
     {
-        // Throttle to real SAM speed (50fps = 20ms/frame).
-        // We yield to the scheduler each iteration so USB can process events.
-        // When behind, catch up without sleeping. When ahead, yield until ready.
-        static unsigned long long last_frame_us = 0;
+        // Throttle exactly like bmc64: sleep when ahead, yield to USB.
+        static unsigned long last_frame_us = 0;
         if (last_frame_us == 0) {
             last_frame_us = now_us;
             draw_frame = true;
         } else {
-            unsigned long long next = last_frame_us + FRAME_US;
-            if (now_us < next) {
-                // Too fast — yield to USB scheduler, don't draw yet
+            unsigned long next = last_frame_us + FRAME_US;
+            unsigned long elapsed = now_us - last_frame_us;
+            if (elapsed < FRAME_US) {
+                // Ahead of schedule — sleep most, yield rest (like bmc64)
+                unsigned long remaining = FRAME_US - elapsed;
+                if (remaining > 1000)
+                    circle_sleep((long)(remaining - 500));
                 circle_yield();
                 draw_frame = false;
             } else {
-                // Time for next frame
                 draw_frame = true;
                 last_frame_us = next;
-                // If we're more than 2 frames behind, reset to avoid spiral
-                if (now_us > last_frame_us + FRAME_US * 2)
+                // Reset if more than 2 frames behind
+                if (now_us - last_frame_us > FRAME_US * 2)
                     last_frame_us = now_us;
             }
         }
