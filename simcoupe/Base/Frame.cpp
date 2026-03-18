@@ -346,15 +346,22 @@ void Sync()
     }
     else
     {
+        // Throttle: busy-wait until 20ms have elapsed since the last frame.
+        // This ensures every Z80 frame maps to exactly one display frame,
+        // giving smooth animation. Without this wait, the emulator runs at
+        // maximum speed and skips most frames visually.
         static unsigned long long last_frame_us = 0;
         if (last_frame_us == 0) {
             last_frame_us = now_us;
-            draw_frame = true;
         } else {
-            draw_frame = (now_us - last_frame_us) >= FRAME_US;
-            if (draw_frame)
-                last_frame_us += FRAME_US;
+            // Wait until next frame boundary
+            unsigned long long next = last_frame_us + FRAME_US;
+            if (now_us < next) {
+                while (circle_get_clock_ticks64() < next) { }
+            }
+            last_frame_us = (now_us < next) ? next : now_us;
         }
+        draw_frame = true;
     }
 
     static int num_frames;
