@@ -60,10 +60,22 @@ extern "C" void circle_delay_us(unsigned long long us)
         CTimer::Get()->usDelay((unsigned)us);
 }
 
-// Exactly like bmc64: CTimer::GetClockTicks() = microseconds, 32-bit, 1MHz
+// Returns microseconds since boot, 32-bit.
+// CTimer::GetClockTicks() with USE_PHYSICAL_COUNTER on AArch32 returns
+// raw CNTPCT at 19.2MHz — same bug as GetClockTicks64(). Fix it here.
 extern "C" unsigned long circle_get_ticks(void)
 {
+#if defined(USE_PHYSICAL_COUNTER) && AARCH == 32
+    unsigned long nLow, nHigh;
+    asm volatile ("mrrc p15, 0, %0, %1, c14" : "=r"(nLow), "=r"(nHigh));
+    unsigned long long cntpct = ((unsigned long long)nHigh << 32) | nLow;
+    unsigned long cntfrq;
+    asm volatile ("mrc p15, 0, %0, c14, c0, 0" : "=r"(cntfrq));
+    // Return low 32 bits of microseconds (wraps after ~71 minutes, fine for throttle)
+    return (unsigned long)(cntpct * 1000000ULL / (unsigned long long)cntfrq);
+#else
     return (unsigned long)CTimer::GetClockTicks();
+#endif
 }
 
 // Exactly like bmc64: SimpleusDelay - doesn't block IRQs

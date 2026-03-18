@@ -365,9 +365,8 @@ void Sync()
             if (now_us > next_frame_us + FRAME_US)
                 next_frame_us = now_us + FRAME_US;
         } else {
-            // Not yet — yield once to allow USB processing, no draw
+            // Not yet — just skip drawing, Z80 keeps running at full speed
             draw_frame = false;
-            circle_yield();
         }
     }
 
