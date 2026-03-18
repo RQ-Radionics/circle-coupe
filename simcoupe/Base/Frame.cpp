@@ -331,13 +331,24 @@ void Sync()
     // this ARM toolchain - elapsed values come out as raw nanosecond
     // counts instead of seconds, breaking all throttle and profiling.
 
-    // Use circle_get_clock_ticks64() which correctly returns microseconds
-    // on AArch32 (divides CNTPCT by CNTFRQ). This is the same function
-    // used by the profiling code and known to work correctly.
-    unsigned long now_us = (unsigned long)circle_get_clock_ticks64();
+    // Read CNTPCT directly — no division, no conversion.
+    // Compute FRAME_TICKS once from CNTFRQ.
+    unsigned long now_ticks;
+    {
+        unsigned long lo, hi;
+        asm volatile ("mrrc p15, 0, %0, %1, c14" : "=r"(lo), "=r"(hi));
+        now_ticks = lo;  // 32-bit wraps every ~224s at 19.2MHz — fine
+    }
 
-    constexpr unsigned long FRAME_US =
-        1000000UL / (unsigned long)ACTUAL_FRAMES_PER_SECOND; // ~19960 µs
+    // Compute FRAME_TICKS once: CNTFRQ / 50.08Hz ≈ 383296 at 19.2MHz
+    static unsigned long FRAME_TICKS = 0;
+    static unsigned long PROFILING_TICKS = 0;
+    if (FRAME_TICKS == 0) {
+        unsigned long cntfrq;
+        asm volatile ("mrc p15, 0, %0, c14, c0, 0" : "=r"(cntfrq));
+        FRAME_TICKS = cntfrq / (unsigned long)ACTUAL_FRAMES_PER_SECOND;
+        PROFILING_TICKS = cntfrq; // 1 second in ticks
+    }
 
     if ((g_nTurbo & TURBO_BOOT) && !GUI::IsActive())
     {
@@ -345,52 +356,49 @@ void Sync()
     }
     else if (!(g_nTurbo & TURBO_KEY) && !GUI::IsActive() && TurboMode())
     {
-        static unsigned long last_drawn_us = 0;
-        unsigned long turbo_frame_us = 1000000UL / FPS_IN_TURBO_MODE;
-        draw_frame = (now_us - last_drawn_us) >= turbo_frame_us;
-        if (draw_frame) last_drawn_us = now_us;
+        static unsigned long last_drawn = 0;
+        unsigned long turbo_ticks = FRAME_TICKS / 2; // faster during turbo
+        draw_frame = (now_ticks - last_drawn) >= turbo_ticks;
+        if (draw_frame) last_drawn = now_ticks;
     }
     else
     {
-        // Throttle exactly like bmc64: sleep when ahead, yield to USB.
-        static unsigned long last_frame_us = 0;
-        if (last_frame_us == 0) {
-            last_frame_us = now_us;
+        // Throttle: spinloop on CNTPCT until next frame boundary.
+        // No division, no conversion — pure ticks comparison.
+        static unsigned long next_frame = 0;
+        if (next_frame == 0) {
+            next_frame = now_ticks + FRAME_TICKS;
             draw_frame = true;
         } else {
-            unsigned long next = last_frame_us + FRAME_US;
-            unsigned long elapsed = now_us - last_frame_us;
-            if (elapsed < FRAME_US) {
-                // Ahead of schedule — sleep most, yield rest (like bmc64)
-                unsigned long remaining = FRAME_US - elapsed;
-                if (remaining > 1000)
-                    circle_sleep((long)(remaining - 500));
-                circle_yield();
-                draw_frame = false;
-            } else {
-                draw_frame = true;
-                last_frame_us = next;
-                // Reset if more than 2 frames behind
-                if (now_us - last_frame_us > FRAME_US * 2)
-                    last_frame_us = now_us;
+            // Spin-wait until frame time (allows HW IRQs)
+            while ((long)(now_ticks - next_frame) < 0) {
+                unsigned long lo, hi;
+                asm volatile ("mrrc p15, 0, %0, %1, c14" : "=r"(lo), "=r"(hi));
+                now_ticks = lo;
             }
+            draw_frame = true;
+            next_frame += FRAME_TICKS;
+            // If >2 frames behind, resync
+            if ((long)(now_ticks - next_frame) > (long)(FRAME_TICKS * 2))
+                next_frame = now_ticks + FRAME_TICKS;
         }
     }
 
     static int num_frames;
     num_frames++;
 
-    static unsigned long long last_profiled_us = 0;
-    if (last_profiled_us == 0 || (now_us - last_profiled_us) >= 1000000ULL)
+    // Profiling: uses CNTPCT ticks, converts to seconds only once/second
+    static unsigned long last_profiled = 0;
+    if (last_profiled == 0 || (now_ticks - last_profiled) >= PROFILING_TICKS)
     {
-        if (last_profiled_us != 0)
+        if (last_profiled != 0)
         {
-            float elapsed_s = (float)(now_us - last_profiled_us) / 1000000.0f;
+            float elapsed_s = (float)(now_ticks - last_profiled) / (float)PROFILING_TICKS;
             float fps = (float)num_frames / elapsed_s;
             float percent = fps / ACTUAL_FRAMES_PER_SECOND * 100.0f;
             profile_text = fmt::format("{:.0f}%", percent);
         }
-        last_profiled_us = now_us;
+        last_profiled = now_ticks;
         num_frames = 0;
     }
 
