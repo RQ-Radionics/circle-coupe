@@ -328,35 +328,10 @@ void Sync()
     // this ARM toolchain - elapsed values come out as raw nanosecond
     // counts instead of seconds, breaking all throttle and profiling.
 
-    auto now_us = circle_get_clock_ticks64();   // microseconds
-
-    constexpr unsigned long long FRAME_US =
-        1000000ULL / (unsigned long long)ACTUAL_FRAMES_PER_SECOND; // ~19960 µs
-
-    if ((g_nTurbo & TURBO_BOOT) && !GUI::IsActive())
-    {
-        draw_frame = false;
-    }
-    else if (!(g_nTurbo & TURBO_KEY) && !GUI::IsActive() && TurboMode())
-    {
-        static unsigned long long last_drawn_us = 0;
-        unsigned long long turbo_frame_us = 1000000ULL / FPS_IN_TURBO_MODE;
-        draw_frame = (now_us - last_drawn_us) >= turbo_frame_us;
-        if (draw_frame) last_drawn_us = now_us;
-    }
-    else
-    {
-        // Throttle to 50fps using the hardware clock directly.
-        static unsigned long long last_frame_us = 0;
-        if (last_frame_us == 0) {
-            last_frame_us = now_us;
-            draw_frame = true;
-        } else {
-            draw_frame = (now_us - last_frame_us) >= FRAME_US;
-            if (draw_frame)
-                last_frame_us += FRAME_US;
-        }
-    }
+    // Always draw — throttle is handled by circle_fb_flip() timing.
+    // This bypasses TURBO_BOOT suppression so we can see the screen immediately.
+    auto now_us = circle_get_clock_ticks64();
+    draw_frame = true;
 
     static int num_frames;
     num_frames++;
