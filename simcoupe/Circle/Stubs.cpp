@@ -60,17 +60,33 @@ extern "C" void circle_delay_us(unsigned long long us)
         CTimer::Get()->usDelay((unsigned)us);
 }
 
-// Exactly like bmc64: CTimer::GetClockTicks() = microseconds, 32-bit, 1MHz
+// Returns raw CNTPCT low 32 bits at 19.2MHz (USE_PHYSICAL_COUNTER AArch32).
+// Frame::Sync() reads CNTFRQ to compute FRAME_TICKS correctly.
 extern "C" unsigned long circle_get_ticks(void)
 {
+#if defined(USE_PHYSICAL_COUNTER) && AARCH == 32
+    unsigned long nLow, nHigh;
+    asm volatile ("mrrc p15, 0, %0, %1, c14" : "=r"(nLow), "=r"(nHigh));
+    return nLow;
+#else
     return (unsigned long)CTimer::GetClockTicks();
+#endif
 }
 
-// Exactly like bmc64: SimpleusDelay - doesn't block IRQs
-extern "C" void circle_sleep(long us)
+// Sleep for n raw CNTPCT ticks — spinloop allows hardware IRQs.
+extern "C" void circle_sleep(long ticks)
 {
-    if (us > 0)
-        CTimer::SimpleusDelay((unsigned long)us);
+    if (ticks <= 0) return;
+#if defined(USE_PHYSICAL_COUNTER) && AARCH == 32
+    unsigned long start, dummy;
+    asm volatile ("mrrc p15, 0, %0, %1, c14" : "=r"(start), "=r"(dummy));
+    unsigned long now;
+    do {
+        asm volatile ("mrrc p15, 0, %0, %1, c14" : "=r"(now), "=r"(dummy));
+    } while (now - start < (unsigned long)ticks);
+#else
+    CTimer::SimpleusDelay((unsigned long)ticks);
+#endif
 }
 
 extern "C" void circle_yield(void)
