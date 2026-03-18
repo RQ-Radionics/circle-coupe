@@ -21,13 +21,19 @@ dtoverlay=disable-bt
 enable_uart=1
 
 # ---- GPU/Memory ----
-# 1280*720*4*2 (double-buffer) = ~7.4MB + CScreenDevice overhead
+# 1280*720*4*2 (double-buffer) = ~7.4MB framebuffer
 gpu_mem=128
 
 # ---- Circle screen parameters ----
-# Required for CKernelOptions::GetWidth/Height() and CScreenDevice
+# Required for CKernelOptions::GetWidth/Height()
 screen_width=1280
 screen_height=720
+
+# ---- Audio ----
+# Enable PWM audio on 3.5mm jack (GPIO 40/41)
+# Without this Circle CPWMSoundBaseDevice fails silently
+dtparam=audio=on
+audio_pwm_mode=2
 
 # ---- Misc ----
 # Disable rainbow splash screen for faster boot
