@@ -100,6 +100,16 @@ bool Audio::Init()
     constexpr unsigned CHUNK_SIZE  = 1024;
 
     s_pPWM = new CirclePWMSound(s_pInterrupt, SAMPLE_RATE, CHUNK_SIZE);
+
+    // AllocateQueue must be called before SetWriteFormat and Start
+    constexpr unsigned QUEUE_MS = 100;   // 100ms queue
+    if (!s_pPWM->AllocateQueue(QUEUE_MS))
+    {
+        delete s_pPWM;
+        s_pPWM = nullptr;
+        return false;
+    }
+
     s_pPWM->SetWriteFormat(SoundFormatSigned16, 2);
 
     if (!s_pPWM->Start())
@@ -150,11 +160,14 @@ float Audio::AddData(uint8_t *pData, int len_bytes)
         }
         else
         {
-            // Ring full — yield briefly (DMA IRQ on core 0 will drain it)
-            CTimer::Get()->usDelay(100);
+            // Ring full — busy-wait for DMA IRQ to drain it.
+            // This is the master clock: DMA runs at 44100Hz = 50fps SAM.
+            // Keep tight to avoid missing the drain moment.
+            asm volatile("nop");
         }
     }
 
-    // Return fill ratio so Sound.cpp speed-adjust keeps ~50% buffer level
-    return (float)ring_used() / (float)(RING_SAMPLES - 1);
+    // Return 0.5 always — timing is handled by DMA backpressure above.
+    // Sound.cpp speed-adjust must NOT add extra sleep.
+    return 0.5f;
 }
