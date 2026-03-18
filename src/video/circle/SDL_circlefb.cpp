@@ -130,9 +130,9 @@ void circle_fb_update(void)
 void circle_fb_set_palette(unsigned index, unsigned r, unsigned g, unsigned b)
 {
     if (!s_pFrameBuffer || index >= 256) return;
-    // RGBA format: Circle's SetPalette32 expects 0xAARRGGBB
-    u32 rgba = (0xFF << 24) | (r << 16) | (g << 8) | b;
-    s_pFrameBuffer->SetPalette32((u8)index, rgba);
+    // RPi firmware palette format is 0xAABBGGRR (ABGR)
+    u32 abgr = (0xFFu << 24) | (b << 16) | (g << 8) | r;
+    s_pFrameBuffer->SetPalette32((u8)index, abgr);
 }
 
 /* Apply all palette changes to the hardware */
