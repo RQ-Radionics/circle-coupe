@@ -13,6 +13,7 @@
 #include <circle/sched/scheduler.h>
 #include <circle/usb/usbhcidevice.h>
 #include <circle/multicore.h>
+#include <circle/sound/pwmsoundbasedevice.h>
 #include <circle/types.h>
 #include <SDCard/emmc.h>
 
@@ -41,6 +42,7 @@ private:
     CScheduler          m_Scheduler;
     CUSBHCIDevice       m_USBHCI;
     CEMMCDevice         m_EMMC;
+    CPWMSoundBaseDevice m_PWMSound;
 
     volatile bool       m_bLaunch;
 };

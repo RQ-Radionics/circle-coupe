@@ -15,8 +15,9 @@
 #include <string.h>
 
 extern "C" void circle_audio_set_interrupt(void *pInterrupt);
-extern "C" void circle_audio_init_device(void);
-extern "C" void circle_audio_activate(void *);
+extern "C" void circle_audio_set_device(void *pDevice);
+extern "C" void circle_audio_start(void);
+extern "C" void circle_audio_activate(void *pDevice);
 extern "C" int  fatfs_mount(void);
 extern "C" int  circle_fb_init(unsigned w, unsigned h, unsigned depth);
 
@@ -88,6 +89,7 @@ CKernel::CKernel()
     m_Scheduler(),
     m_USBHCI(&m_Interrupt, &m_Timer, TRUE),
     m_EMMC(&m_Interrupt, &m_Timer),
+    m_PWMSound(&m_Interrupt, 44100, 2048),
     m_bLaunch(false)
 {
     m_ActLED.Blink(5);
@@ -110,6 +112,7 @@ boolean CKernel::Initialize()
         m_Logger.Write(FromKernel, LogWarning, "FatFs mount failed");
 
     circle_audio_set_interrupt(&m_Interrupt);
+    circle_audio_set_device(&m_PWMSound);
 
     if (bOK && circle_fb_init(800, 600, 8) != 0)
         m_Logger.Write(FromKernel, LogWarning, "Framebuffer init failed");
@@ -130,8 +133,8 @@ TShutdownMode CKernel::Run()
     if (pKeyboard)
         pKeyboard->RegisterKeyStatusHandlerRaw(KeyStatusHandlerRaw, FALSE, nullptr);
 
-    // Create and start PWM audio on Core 0
-    circle_audio_init_device();
+    // Start PWM audio — device constructed in kernel ctor, queue setup here
+    circle_audio_start();
 
     // Signal core 1 + core 2 to start
     asm volatile("dmb" ::: "memory");
@@ -169,8 +172,9 @@ void CKernel::Run(unsigned nCore)
     else if (nCore == 2)
     {
         // Core 2: Sound synthesis loop
-        // Activate audio — device created on Core 0, pointer refreshed here
-        circle_audio_activate(nullptr);
+        // Activate audio from this core — pass device pointer directly
+        // to avoid cross-core L1 cache visibility issue with s_pSound
+        circle_audio_activate(&m_PWMSound);
 
         while (true)
         {
