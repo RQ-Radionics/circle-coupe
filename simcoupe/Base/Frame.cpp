@@ -25,11 +25,7 @@
 extern "C" unsigned long long circle_get_clock_ticks64(void);
 extern "C" unsigned long      circle_get_ticks(void);
 extern "C" void               circle_sleep(long us);
-extern "C" unsigned           circle_audio_add_count(void);
-extern "C" unsigned           circle_audio_add_bytes(void);
-extern "C" unsigned           circle_audio_add_called(void);
-extern "C" int                circle_audio_last_len(void);
-extern "C" int                circle_audio_reject(void);
+
 extern const char *g_audio_status;
 extern volatile unsigned g_sound_signal_count;
 extern volatile unsigned g_core2_exec_count;
@@ -395,10 +391,8 @@ void Sync()
             float elapsed_s = (float)(now_us - last_profiled_us) / 1000000.0f;
             float fps = (float)num_frames / elapsed_s;
             float percent = fps / ACTUAL_FRAMES_PER_SECOND * 100.0f;
-            profile_text = fmt::format("{:.0f}% a={} l={} r={} c={}",
-                percent,
-                circle_audio_add_called(), circle_audio_last_len(),
-                circle_audio_reject(), circle_audio_add_count());
+            profile_text = fmt::format("{:.0f}% {}",
+                percent, g_audio_status ? g_audio_status : "?");
         }
         last_profiled_us = now_us;
         num_frames = 0;

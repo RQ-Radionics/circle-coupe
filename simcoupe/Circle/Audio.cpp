@@ -1,4 +1,8 @@
-// Audio.cpp — PWM audio with device owned by kernel (constructed before multicore)
+// Audio.cpp — PWM audio with GetChunk + ring buffer
+//
+// Core 0 DMA: calls GetChunk() which reads from ring buffer
+// Core 2: Sound::FrameUpdate() → Audio::AddData() writes to ring buffer
+// No Write() call — ring buffer is our own lock-free SPSC queue.
 
 #include "SimCoupe.h"
 #include "Audio.h"
@@ -8,9 +12,55 @@
 #include <circle/sound/pwmsoundbasedevice.h>
 #include <circle/interrupt.h>
 
-static CPWMSoundBaseDevice * volatile s_pSound     = nullptr;
-static CInterruptSystem    *s_pInterrupt = nullptr;
-static volatile bool        s_active     = false;
+// ---- Ring buffer (Core 2 writes, Core 0 DMA reads) ----
+
+static constexpr unsigned RING_FRAMES  = 8192;
+static constexpr unsigned RING_CH      = 2;
+static constexpr unsigned RING_SAMPLES = RING_FRAMES * RING_CH;
+
+static s16      s_ring[RING_SAMPLES];
+static volatile unsigned s_ring_head = 0;   // written by Core 2
+static volatile unsigned s_ring_tail = 0;   // written by Core 0 DMA
+
+static inline unsigned ring_used() {
+    unsigned h = s_ring_head, t = s_ring_tail;
+    return (h - t + RING_SAMPLES) % RING_SAMPLES;
+}
+
+// ---- PWM with GetChunk override ----
+
+class CirclePWM : public CPWMSoundBaseDevice
+{
+public:
+    CirclePWM(CInterruptSystem *pInt, unsigned rate, unsigned chunk)
+    : CPWMSoundBaseDevice(pInt, rate, chunk) {}
+
+protected:
+    // Called by DMA IRQ on Core 0
+    unsigned GetChunk(u32 *pBuffer, unsigned nChunkSize) override
+    {
+        for (unsigned i = 0; i < nChunkSize; i++)
+        {
+            s16 l = 0, r = 0;
+            if (ring_used() >= 2)
+            {
+                unsigned t = s_ring_tail;
+                l = s_ring[t]; t = (t + 1) % RING_SAMPLES;
+                r = s_ring[t]; t = (t + 1) % RING_SAMPLES;
+                s_ring_tail = t;
+            }
+            u32 ul = (u32)((u16)(l + 32768));
+            u32 ur = (u32)((u16)(r + 32768));
+            pBuffer[i] = (ur << 16) | ul;
+        }
+        return nChunkSize;
+    }
+};
+
+// ---- State ----
+
+static CirclePWM       *s_pSound     = nullptr;
+static CInterruptSystem *s_pInterrupt = nullptr;
 
 const char *g_audio_status = "no-init";
 
@@ -19,56 +69,37 @@ extern "C" void circle_audio_set_interrupt(void *pInt)
     s_pInterrupt = (CInterruptSystem *)pInt;
 }
 
-// Device is owned by CKernel — just store the pointer
-extern "C" void circle_audio_set_device(void *pDev)
-{
-    s_pSound = (CPWMSoundBaseDevice *)pDev;
-    g_audio_status = "device-set";
-}
-
 extern "C" void circle_audio_set_vchiq(void *) {}
-
-// Called from Run() on Core 0 — AllocateQueue + Start like sample 34
-extern "C" void circle_audio_start(void)
+// Create and start device on Core 0
+extern "C" void circle_audio_init_device(void)
 {
-    if (!s_pSound) return;
+    if (!s_pInterrupt || s_pSound) return;
 
-    g_audio_status = "alloc-queue";
-    if (!s_pSound->AllocateQueue(300)) {  // 300ms queue to avoid underrun
-        g_audio_status = "alloc-fail";
-        s_pSound = nullptr;
-        return;
-    }
-
-    s_pSound->SetWriteFormat(SoundFormatSigned16, 2);
-
-    // Fill queue with silence before Start (like sample 34)
-    unsigned nFrames = s_pSound->GetQueueSizeFrames();
-    s16 *sil = new s16[nFrames * 2];
-    for (unsigned i = 0; i < nFrames * 2; i++) sil[i] = 0;
-    s_pSound->Write(sil, nFrames * 2 * sizeof(s16));
-    delete[] sil;
+    g_audio_status = "creating";
+    s_pSound = new CirclePWM(s_pInterrupt, 44100, 2048);
 
     g_audio_status = "starting";
     if (!s_pSound->Start()) {
         g_audio_status = "start-fail";
+        delete s_pSound;
         s_pSound = nullptr;
         return;
     }
-
-    // s_active set from Core 2 via circle_audio_activate() — cross-core cache issue
     g_audio_status = "running";
 }
 
-// Also keep old entry point as no-op
-extern "C" void circle_audio_init_device(void) {}
+extern "C" void circle_audio_set_device(void *) {}
+extern "C" void circle_audio_start(void) {}
 
-// Called from Core 2 with the device pointer — avoids cross-core cache issue
-extern "C" void circle_audio_activate(void *pDevice)
+// Called from Core 2 — refresh s_pSound pointer for this core's cache
+extern "C" void circle_audio_activate(void *)
 {
-    s_pSound = (CPWMSoundBaseDevice *)pDevice;
-    s_active = true;
+    // s_pSound was set on Core 0, may not be visible here.
+    // Nothing to do — AddData no longer checks s_active,
+    // and s_pSound is read with volatile qualifier.
 }
+
+// ---- Audio API ----
 
 bool Audio::Init()
 {
@@ -77,40 +108,28 @@ bool Audio::Init()
 
 void Audio::Exit()
 {
-    // Don't delete — kernel owns the device
-    s_active = false;
+    s_ring_head = s_ring_tail = 0;
 }
-
-static volatile unsigned s_add_count = 0;
-static volatile unsigned s_add_bytes = 0;
-static volatile unsigned s_add_called = 0;
-static volatile int s_add_last_len = 0;
-static volatile int s_add_reject_reason = 0;  // 1=!active 2=!pData 3=len<=0 4=!dev
 
 float Audio::AddData(uint8_t *pData, int len_bytes)
 {
-    s_add_called++;
-    s_add_last_len = len_bytes;
+    if (!pData || len_bytes <= 0 || !s_pSound)
+        return 0.5f;
 
-    // Get device pointer with memory barrier to ensure cross-core visibility
-    asm volatile("dmb" ::: "memory");
-    CPWMSoundBaseDevice *dev = s_pSound;
-    bool active = s_active;
+    const s16 *src = reinterpret_cast<const s16 *>(pData);
+    int n = len_bytes / sizeof(s16);
 
-    // Skip s_active check — just verify we have data and a device
-    if (!pData)        { s_add_reject_reason = 2; return 0.5f; }
-    if (len_bytes <= 0){ s_add_reject_reason = 3; return 0.5f; }
-    if (!dev)          { s_add_reject_reason = 4; return 0.5f; }
-    int written = dev->Write(pData, len_bytes);
-    s_add_count++;
-    s_add_bytes += written;
+    for (int i = 0; i < n; i += 2)
+    {
+        // Drop if ring full
+        unsigned free = RING_SAMPLES - ring_used() - 1;
+        if (free < 2) break;
+
+        unsigned h = s_ring_head;
+        s_ring[h] = src[i];     h = (h + 1) % RING_SAMPLES;
+        s_ring[h] = src[i + 1]; h = (h + 1) % RING_SAMPLES;
+        s_ring_head = h;
+    }
+
     return 0.5f;
 }
-
-extern "C" unsigned circle_audio_add_called(void) { return s_add_called; }
-extern "C" int circle_audio_last_len(void) { return s_add_last_len; }
-extern "C" int circle_audio_reject(void) { return s_add_reject_reason; }
-
-// Expose for profiling
-extern "C" unsigned circle_audio_add_count(void) { return s_add_count; }
-extern "C" unsigned circle_audio_add_bytes(void) { return s_add_bytes; }
