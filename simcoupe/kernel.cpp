@@ -85,7 +85,7 @@ CKernel::CKernel()
     m_Scheduler(),
     m_USBHCI(&m_Interrupt, &m_Timer, TRUE),
     m_EMMC(&m_Interrupt, &m_Timer),
-    m_VCHIQ(CMemorySystem::Get(), &m_Interrupt)
+    m_VCHIQ(&m_Memory, &m_Interrupt)
 {
     m_ActLED.Blink(5);
 }
@@ -102,13 +102,19 @@ boolean CKernel::Initialize()
     if (bOK) bOK = m_Timer.Initialize();
     if (bOK) bOK = m_USBHCI.Initialize();
     if (bOK) bOK = m_EMMC.Initialize();
-    if (bOK) bOK = m_VCHIQ.Initialize();
+
+    // VCHIQ must init before framebuffer (like bmc64)
+    if (bOK && !m_VCHIQ.Initialize())
+        m_Logger.Write(FromKernel, LogWarning, "VCHIQ init failed - no audio");
 
     if (bOK && fatfs_mount() != 0)
         m_Logger.Write(FromKernel, LogWarning, "FatFs mount failed");
 
     circle_audio_set_interrupt(&m_Interrupt);
     circle_audio_set_vchiq(&m_VCHIQ);
+
+    // Init audio device on core 0 BEFORE framebuffer
+    circle_audio_init_device();
 
     // Init framebuffer on core 0 (GPU mailbox must be core 0)
     if (bOK && circle_fb_init(800, 600, 8) != 0)
@@ -129,9 +135,6 @@ TShutdownMode CKernel::Run()
         CDeviceNameService::Get()->GetDevice("ukbd1", FALSE);
     if (pKeyboard)
         pKeyboard->RegisterKeyStatusHandlerRaw(KeyStatusHandlerRaw, FALSE, nullptr);
-
-    // Init audio on core 0 after everything else — DMA IRQs need core 0
-    circle_audio_init_device();
 
     // Signal core 1 to start
     asm volatile("dmb" ::: "memory");
