@@ -108,9 +108,7 @@ boolean CKernel::Initialize()
 
     circle_audio_set_interrupt(&m_Interrupt);
 
-    // PWM audio disabled — CPWMSoundBaseDevice hangs on this RPi3.
-    // TODO: investigate PWM DMA init failure (circle-coupe-4h1)
-    // circle_audio_init_device();
+    // PWM audio init deferred to Run() — like Circle sample 34
 
     if (bOK && circle_fb_init(800, 600, 8) != 0)
         m_Logger.Write(FromKernel, LogWarning, "Framebuffer init failed");
@@ -130,6 +128,9 @@ TShutdownMode CKernel::Run()
         CDeviceNameService::Get()->GetDevice("ukbd1", FALSE);
     if (pKeyboard)
         pKeyboard->RegisterKeyStatusHandlerRaw(KeyStatusHandlerRaw, FALSE, nullptr);
+
+    // Init PWM audio AFTER all hardware init, in Run(), like Circle sample 34
+    circle_audio_init_device();
 
     // Signal core 1 + core 2 to start
     asm volatile("dmb" ::: "memory");
