@@ -19,6 +19,7 @@
 #include <circle/multicore.h>
 #include <circle/types.h>
 #include <SDCard/emmc.h>
+#include <vc4/vchiq/vchiqdevice.h>
 
 enum TShutdownMode { ShutdownNone, ShutdownHalt, ShutdownReboot };
 
@@ -45,6 +46,7 @@ private:
     CScheduler          m_Scheduler;
     CUSBHCIDevice       m_USBHCI;
     CEMMCDevice         m_EMMC;
+    CVCHIQDevice        m_VCHIQ;
 
     volatile bool       m_bLaunch;
 };

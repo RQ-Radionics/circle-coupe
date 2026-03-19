@@ -15,6 +15,7 @@
 
 // Platform init functions (C linkage)
 extern "C" void circle_audio_set_interrupt(void *pInterrupt);
+extern "C" void circle_audio_set_vchiq(void *pVCHIQ);
 extern "C" void circle_audio_init_device(void);
 extern "C" int  fatfs_mount(void);
 extern "C" int  circle_fb_init(unsigned w, unsigned h, unsigned depth);
@@ -83,7 +84,8 @@ CKernel::CKernel()
     m_Logger(m_Options.GetLogLevel(), &m_Timer),
     m_Scheduler(),
     m_USBHCI(&m_Interrupt, &m_Timer, TRUE),
-    m_EMMC(&m_Interrupt, &m_Timer)
+    m_EMMC(&m_Interrupt, &m_Timer),
+    m_VCHIQ(CMemorySystem::Get(), &m_Interrupt)
 {
     m_ActLED.Blink(5);
 }
@@ -100,11 +102,13 @@ boolean CKernel::Initialize()
     if (bOK) bOK = m_Timer.Initialize();
     if (bOK) bOK = m_USBHCI.Initialize();
     if (bOK) bOK = m_EMMC.Initialize();
+    if (bOK) bOK = m_VCHIQ.Initialize();
 
     if (bOK && fatfs_mount() != 0)
         m_Logger.Write(FromKernel, LogWarning, "FatFs mount failed");
 
     circle_audio_set_interrupt(&m_Interrupt);
+    circle_audio_set_vchiq(&m_VCHIQ);
 
     // Init framebuffer on core 0 (GPU mailbox must be core 0)
     if (bOK && circle_fb_init(800, 600, 8) != 0)

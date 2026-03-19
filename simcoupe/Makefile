@@ -36,6 +36,9 @@ LIBS = \
 	$(CMAKE_BUILD)/_deps/fmt-build/libfmt.a \
 	$(CMAKE_BUILD)/_deps/resid-build/libresid.a \
 	$(CMAKE_BUILD)/_deps/spectrum-build/libspectrum.a \
+	$(CIRCLEHOME)/addon/vc4/sound/libvchiqsound.a \
+	$(CIRCLEHOME)/addon/vc4/vchiq/libvchiq.a \
+	$(CIRCLEHOME)/addon/linux/liblinuxemu.a \
 	$(CIRCLEHOME)/addon/SDCard/libsdcard.a \
 	$(CIRCLEHOME)/addon/fatfs/libfatfs.a \
 	$(CIRCLEHOME)/lib/sched/libsched.a \
