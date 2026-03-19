@@ -1,4 +1,8 @@
-// kernel.cpp — SimCoupe Circle kernel (monocore + VCHIQ audio test)
+// kernel.cpp — SimCoupe Circle kernel (multicore)
+//
+// Core 0: Initialize() + Run() — USB, IRQs, scheduler
+// Core 1: Run(1) — SimCoupe Z80 + video
+// Core 2: Run(2) — Sound::FrameUpdate() synthesis
 
 #include <circle/types.h>
 #define __time_t_defined
@@ -18,14 +22,18 @@ extern "C" int  circle_fb_init(unsigned w, unsigned h, unsigned depth);
 
 namespace Main { bool Init(int argc, char *argv[]); void Exit(); }
 namespace CPU  { void Run(); void Exit(); }
+namespace Sound { void FrameUpdate(); }
 
 extern "C" void circle_simcoupe_key(unsigned hid_scancode, int pressed,
                                      int mod_shift, int mod_ctrl, int mod_alt);
 
 static const char FromKernel[] = "kernel";
 
-// ---- USB keyboard handler (same as before) ----
+// ---- Sound thread signalling (Core 1 → Core 2) ----
+volatile bool g_sound_frame_pending = false;  // set by IO::FrameUpdate on Core 1
+volatile bool g_sound_frame_done    = true;   // set by Core 2 when done
 
+// ---- USB keyboard handler ----
 static unsigned char s_prev_mod = 0;
 static unsigned char s_prev_keys[6] = {0};
 
@@ -70,14 +78,16 @@ static void KeyStatusHandlerRaw(unsigned char ucMod,
 // ---- CKernel ----
 
 CKernel::CKernel()
-:   m_Memory(),
+:   CMultiCoreSupport(&m_Memory),
+    m_Memory(),
     m_Serial(),
     m_Timer(&m_Interrupt),
     m_Logger(m_Options.GetLogLevel(), &m_Timer),
     m_Scheduler(),
     m_USBHCI(&m_Interrupt, &m_Timer, TRUE),
     m_EMMC(&m_Interrupt, &m_Timer),
-    m_VCHIQ(&m_Memory, &m_Interrupt)
+    m_VCHIQ(&m_Memory, &m_Interrupt),
+    m_bLaunch(false)
 {
     m_ActLED.Blink(5);
 }
@@ -95,22 +105,21 @@ boolean CKernel::Initialize()
     if (bOK) bOK = m_USBHCI.Initialize();
     if (bOK) bOK = m_EMMC.Initialize();
 
-    // VCHIQ before framebuffer (like bmc64)
-    if (bOK) bOK = m_VCHIQ.Initialize();
-
     if (bOK && fatfs_mount() != 0)
         m_Logger.Write(FromKernel, LogWarning, "FatFs mount failed");
 
     circle_audio_set_interrupt(&m_Interrupt);
-    circle_audio_set_vchiq(&m_VCHIQ);
-    circle_audio_init_device();
 
     if (bOK && circle_fb_init(800, 600, 8) != 0)
         m_Logger.Write(FromKernel, LogWarning, "Framebuffer init failed");
 
+    // Start secondary cores
+    if (bOK) bOK = CMultiCoreSupport::Initialize();
+
     return bOK;
 }
 
+// Core 0: USB host + scheduler loop
 TShutdownMode CKernel::Run()
 {
     m_USBHCI.UpdatePlugAndPlay();
@@ -120,12 +129,62 @@ TShutdownMode CKernel::Run()
     if (pKeyboard)
         pKeyboard->RegisterKeyStatusHandlerRaw(KeyStatusHandlerRaw, FALSE, nullptr);
 
-    static const char *argv0 = "simcoupe";
-    static char *argv[] = { const_cast<char*>(argv0), nullptr };
+    // Signal core 1 + core 2 to start
+    asm volatile("dmb" ::: "memory");
+    m_bLaunch = true;
+    asm volatile("dmb" ::: "memory");
 
-    if (Main::Init(1, argv))
-        CPU::Run();
+    while (true)
+    {
+        m_Scheduler.Yield();
+        m_USBHCI.UpdatePlugAndPlay();
+    }
 
-    Main::Exit();
     return ShutdownHalt;
+}
+
+// Secondary cores
+void CKernel::Run(unsigned nCore)
+{
+    // Wait for core 0
+    while (!m_bLaunch)
+        asm volatile("dmb" ::: "memory");
+
+    if (nCore == 1)
+    {
+        // Core 1: Z80 emulation
+        static const char *argv0 = "simcoupe";
+        static char *argv[] = { const_cast<char*>(argv0), nullptr };
+
+        if (Main::Init(1, argv))
+            CPU::Run();
+
+        Main::Exit();
+        while (true) asm volatile("wfe");
+    }
+    else if (nCore == 2)
+    {
+        // Core 2: Sound synthesis loop
+        // Waits for g_sound_frame_pending, runs Sound::FrameUpdate(), signals done
+        while (true)
+        {
+            asm volatile("dmb" ::: "memory");
+            if (g_sound_frame_pending)
+            {
+                g_sound_frame_pending = false;
+                asm volatile("dmb" ::: "memory");
+
+                Sound::FrameUpdate();
+
+                asm volatile("dmb" ::: "memory");
+                g_sound_frame_done = true;
+                asm volatile("dmb" ::: "memory");
+            }
+        }
+    }
+    else
+    {
+        // Core 3: unused
+        while (true) asm volatile("wfe");
+    }
 }

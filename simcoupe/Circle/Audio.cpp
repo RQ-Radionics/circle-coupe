@@ -117,8 +117,8 @@ extern "C" void circle_audio_init_device(void)
 
 bool Audio::Init()
 {
-    if (s_pSound)
-        s_active = true;
+    // Disable audio completely to test if Sound::FrameUpdate() is the bottleneck
+    s_active = false;
     return true;
 }
 

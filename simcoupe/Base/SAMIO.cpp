@@ -76,6 +76,11 @@ std::unique_ptr<DAC> pDAC;
 std::unique_ptr<SAADevice> pSAA;
 std::unique_ptr<SIDDevice> pSID;
 
+#ifdef __circle__
+// Sound synthesis signalling — defined in kernel.cpp, used by IO::FrameUpdate
+extern volatile bool g_sound_frame_pending;
+#endif
+
 //////////////////////////////////////////////////////////////////////////////
 
 namespace IO
@@ -833,8 +838,13 @@ void FrameUpdate()
 
     Input::Update();
 
+#ifdef __circle__
+    if (!Frame::TurboMode())
+        g_sound_frame_pending = true;
+#else
     if (!Frame::TurboMode())
         Sound::FrameUpdate();
+#endif
 }
 
 void UpdateInput()

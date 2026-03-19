@@ -12,20 +12,22 @@
 #include <circle/memory.h>
 #include <circle/sched/scheduler.h>
 #include <circle/usb/usbhcidevice.h>
+#include <circle/multicore.h>
 #include <circle/types.h>
 #include <SDCard/emmc.h>
 #include <vc4/vchiq/vchiqdevice.h>
 
 enum TShutdownMode { ShutdownNone, ShutdownHalt, ShutdownReboot };
 
-class CKernel
+class CKernel : public CMultiCoreSupport
 {
 public:
     CKernel();
     ~CKernel();
 
     boolean Initialize();
-    TShutdownMode Run();
+    TShutdownMode Run();           // Core 0: USB + scheduler
+    void Run(unsigned nCore) override;  // Core 1: Z80, Core 2: Sound
 
 private:
     CMemorySystem       m_Memory;
@@ -41,4 +43,6 @@ private:
     CUSBHCIDevice       m_USBHCI;
     CEMMCDevice         m_EMMC;
     CVCHIQDevice        m_VCHIQ;
+
+    volatile bool       m_bLaunch;
 };
