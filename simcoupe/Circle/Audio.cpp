@@ -117,8 +117,8 @@ extern "C" void circle_audio_init_device(void)
 
 bool Audio::Init()
 {
-    // Disable audio completely to test if Sound::FrameUpdate() is the bottleneck
-    s_active = false;
+    if (s_pSound)
+        s_active = true;
     return true;
 }
 
@@ -159,10 +159,9 @@ float Audio::AddData(uint8_t *pData, int len_bytes)
         }
         else
         {
-            // Ring full — drop samples instead of blocking.
-            // If VCHIQ is not draining, blocking here kills the Z80.
-            // When audio works correctly, this path should rarely hit.
-            break;
+            // Ring full — busy-wait. VCHIQ DMA on Core 0 drains at 44100Hz.
+            // This is the master clock that regulates Z80 to real-time speed.
+            asm volatile("nop");
         }
     }
 
