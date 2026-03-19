@@ -42,11 +42,13 @@ protected:
         for (unsigned i = 0; i < nChunkSize; i++)
         {
             s16 l = 0, r = 0;
+            asm volatile("dmb" ::: "memory");  // see Core 2's s_ring_head
             if (ring_used() >= 2)
             {
                 unsigned t = s_ring_tail;
                 l = s_ring[t]; t = (t + 1) % RING_SAMPLES;
                 r = s_ring[t]; t = (t + 1) % RING_SAMPLES;
+                asm volatile("dmb" ::: "memory");  // publish new s_ring_tail
                 s_ring_tail = t;
             }
             u32 ul = (u32)((u16)(l + 32768));
@@ -121,13 +123,14 @@ float Audio::AddData(uint8_t *pData, int len_bytes)
 
     for (int i = 0; i < n; i += 2)
     {
-        // Drop if ring full
+        asm volatile("dmb" ::: "memory");  // see Core 0's s_ring_tail
         unsigned free = RING_SAMPLES - ring_used() - 1;
         if (free < 2) break;
 
         unsigned h = s_ring_head;
         s_ring[h] = src[i];     h = (h + 1) % RING_SAMPLES;
         s_ring[h] = src[i + 1]; h = (h + 1) % RING_SAMPLES;
+        asm volatile("dmb" ::: "memory");  // publish new s_ring_head
         s_ring_head = h;
     }
 
