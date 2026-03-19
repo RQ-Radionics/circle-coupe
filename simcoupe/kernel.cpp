@@ -103,18 +103,15 @@ boolean CKernel::Initialize()
     if (bOK) bOK = m_USBHCI.Initialize();
     if (bOK) bOK = m_EMMC.Initialize();
 
-    // VCHIQ must init before framebuffer (like bmc64)
-    if (bOK && !m_VCHIQ.Initialize())
-        m_Logger.Write(FromKernel, LogWarning, "VCHIQ init failed - no audio");
+    // VCHIQ disabled — hangs on Initialize() with multicore enabled.
+    // TODO: investigate doorbell IRQ conflict with ARM_ALLOW_MULTI_CORE
+    // if (bOK && !m_VCHIQ.Initialize())
+    //     m_Logger.Write(FromKernel, LogWarning, "VCHIQ init failed");
 
     if (bOK && fatfs_mount() != 0)
         m_Logger.Write(FromKernel, LogWarning, "FatFs mount failed");
 
     circle_audio_set_interrupt(&m_Interrupt);
-    circle_audio_set_vchiq(&m_VCHIQ);
-
-    // Init audio device on core 0 BEFORE framebuffer
-    circle_audio_init_device();
 
     // Init framebuffer on core 0 (GPU mailbox must be core 0)
     if (bOK && circle_fb_init(800, 600, 8) != 0)
