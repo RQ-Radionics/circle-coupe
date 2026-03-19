@@ -10,9 +10,7 @@ kernel=kernel8-32.img
 # ---- Video ----
 # Force HDMI output even if no display detected at boot
 hdmi_force_hotplug=1
-# 720p @ 60Hz
-hdmi_group=1
-hdmi_mode=4
+# Let the TV negotiate resolution (no forced mode)
 
 # ---- Serial debug ----
 # Disable Bluetooth (frees PL011 UART for serial on GPIO 14/15)
