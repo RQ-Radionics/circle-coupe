@@ -43,11 +43,10 @@ int circle_fb_init(unsigned w, unsigned h, unsigned depth)
         s_pFrameBuffer = nullptr;
     }
 
-    /* Double-buffered: virtual height = physical height * 2 */
-    s_pFrameBuffer = new CBcmFrameBuffer(w, h, depth,
-                                          w, h * 2,   /* virtual double height */
-                                          0,           /* HDMI display */
-                                          TRUE);       /* double buffered */
+    /* Single buffer — dirty-line detection writes directly to visible buffer.
+     * Double buffer caused parpadeo because non-repainted lines showed
+     * stale data from 2 frames ago. */
+    s_pFrameBuffer = new CBcmFrameBuffer(w, h, depth);
     if (!s_pFrameBuffer->Initialize()) {
         delete s_pFrameBuffer;
         s_pFrameBuffer = nullptr;
@@ -57,10 +56,7 @@ int circle_fb_init(unsigned w, unsigned h, unsigned depth)
     s_width  = s_pFrameBuffer->GetWidth();
     s_height = s_pFrameBuffer->GetHeight();
     s_pitch  = s_pFrameBuffer->GetPitch();
-    s_back_buffer = 1;  /* start rendering to buffer 1, display shows buffer 0 */
-
-    /* Show buffer 0 initially */
-    s_pFrameBuffer->SetVirtualOffset(0, 0);
+    s_back_buffer = 0;
 
     return 0;
 }

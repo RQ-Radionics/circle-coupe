@@ -30,16 +30,35 @@ extern "C" {
 }
 
 // ---- Palette: SAM hardware → GPU hardware palette -----------------------
+// Only update if palette actually changed (avoids full-screen flash).
+
+struct PalEntry { uint8_t r, g, b; };
+static PalEntry s_prev_pal[256] = {};
+static bool s_pal_inited = false;
 
 static void BuildPalette()
 {
     auto hw = IO::Palette();
+    bool changed = false;
+
     for (int i = 0; i < 256; i++)
     {
         auto& c = hw[i % NUM_PALETTE_COLOURS];
-        circle_fb_set_palette(i, c.red, c.green, c.blue);
+        if (!s_pal_inited ||
+            s_prev_pal[i].r != c.red ||
+            s_prev_pal[i].g != c.green ||
+            s_prev_pal[i].b != c.blue)
+        {
+            circle_fb_set_palette(i, c.red, c.green, c.blue);
+            s_prev_pal[i] = { c.red, c.green, c.blue };
+            changed = true;
+        }
     }
-    circle_fb_update_palette();
+
+    if (changed) {
+        circle_fb_update_palette();
+        s_pal_inited = true;
+    }
 }
 
 // ---- CircleVideo: IVideoBase implementation -----------------------------
@@ -146,10 +165,9 @@ public:
             }
         }
 
-        if (is_gui)
-            circle_fb_flip_nowait();
-        else
-            circle_fb_flip();
+        // No flip needed — single buffer mode.
+        // Dirty-line writes go directly to the visible framebuffer.
+        // No double-buffer = no parpadeo from stale back buffer data.
     }
 
 private:
