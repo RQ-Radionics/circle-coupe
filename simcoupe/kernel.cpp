@@ -18,7 +18,6 @@ extern "C" void circle_audio_set_interrupt(void *pInterrupt);
 extern "C" void circle_audio_set_device(void *pDevice);
 extern "C" void circle_audio_start(void);
 extern "C" void circle_audio_activate(void *pDevice);
-extern "C" void circle_audio_poll(void);
 extern "C" int  fatfs_mount(void);
 extern "C" int  circle_fb_init(unsigned w, unsigned h, unsigned depth);
 
@@ -90,7 +89,7 @@ CKernel::CKernel()
     m_Scheduler(),
     m_USBHCI(&m_Interrupt, &m_Timer, TRUE),
     m_EMMC(&m_Interrupt, &m_Timer),
-    m_PWMSound(&m_Interrupt, 44100, 2048),
+    m_PWMSound(&m_Interrupt, 22050, 1024),
     m_bLaunch(false)
 {
     m_ActLED.Blink(5);
@@ -144,9 +143,6 @@ TShutdownMode CKernel::Run()
 
     while (true)
     {
-        circle_audio_poll();  // drain ring buffer → Write() on Core 0
-        circle_audio_poll();  // poll aggressively
-        circle_audio_poll();
         m_Scheduler.Yield();
         m_USBHCI.UpdatePlugAndPlay();
     }

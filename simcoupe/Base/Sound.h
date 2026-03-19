@@ -25,7 +25,11 @@
 
 #include "SAASound.h"
 
+#ifdef __circle__
+constexpr auto SAMPLE_FREQ = 22050;
+#else
 constexpr auto SAMPLE_FREQ = 44100;
+#endif
 constexpr auto SAMPLE_BITS = 16;
 constexpr auto SAMPLE_CHANNELS = 2;
 constexpr auto BYTES_PER_SAMPLE = SAMPLE_BITS * SAMPLE_CHANNELS / 8;
