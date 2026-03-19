@@ -362,8 +362,12 @@ void Sync()
         } else {
             unsigned long elapsed = now_us - last_frame_us;
             if (elapsed < FRAME_US) {
-                // No sleep — just skip drawing until time arrives
-                draw_frame = false;
+                // Busy-wait — Core 1 is dedicated to Z80, no USB to block
+                while ((circle_get_ticks() - last_frame_us) < FRAME_US) {}
+                draw_frame = true;
+                last_frame_us += FRAME_US;
+                if (circle_get_ticks() - last_frame_us > FRAME_US * 2)
+                    last_frame_us = circle_get_ticks();
             } else {
                 draw_frame = true;
                 last_frame_us += FRAME_US;

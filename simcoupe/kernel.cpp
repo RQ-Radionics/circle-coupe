@@ -110,15 +110,8 @@ boolean CKernel::Initialize()
 
     circle_audio_set_interrupt(&m_Interrupt);
 
-    // VCHIQ must init BEFORE multicore (doorbell IRQ conflicts with secondary cores)
-    if (bOK) {
-        if (m_VCHIQ.Initialize()) {
-            circle_audio_set_vchiq(&m_VCHIQ);
-            circle_audio_init_device();
-        } else {
-            m_Logger.Write(FromKernel, LogWarning, "VCHIQ init failed - no audio");
-        }
-    }
+    // VCHIQ disabled — hangs on this RPi3 both before and after multicore init.
+    // Audio throttle done via timer in Frame::Sync() instead.
 
     if (bOK && circle_fb_init(800, 600, 8) != 0)
         m_Logger.Write(FromKernel, LogWarning, "Framebuffer init failed");
