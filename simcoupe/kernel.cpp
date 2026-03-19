@@ -1,7 +1,4 @@
-// kernel.cpp — SimCoupe Circle kernel (no SDL, multicore)
-//
-// Core 0: Initialize() → Run() — USB host + scheduler loop
-// Core 1: Run(1) — Main::Init() + CPU::Run() — Z80 emulation
+// kernel.cpp — SimCoupe Circle kernel (monocore + VCHIQ audio test)
 
 #include <circle/types.h>
 #define __time_t_defined
@@ -13,24 +10,21 @@
 #include <circle/input/mouse.h>
 #include <string.h>
 
-// Platform init functions (C linkage)
 extern "C" void circle_audio_set_interrupt(void *pInterrupt);
 extern "C" void circle_audio_set_vchiq(void *pVCHIQ);
 extern "C" void circle_audio_init_device(void);
 extern "C" int  fatfs_mount(void);
 extern "C" int  circle_fb_init(unsigned w, unsigned h, unsigned depth);
 
-// SimCoupe entry points
 namespace Main { bool Init(int argc, char *argv[]); void Exit(); }
 namespace CPU  { void Run(); void Exit(); }
 
-// Input ring buffer (defined in Circle/Input.cpp)
 extern "C" void circle_simcoupe_key(unsigned hid_scancode, int pressed,
                                      int mod_shift, int mod_ctrl, int mod_alt);
 
 static const char FromKernel[] = "kernel";
 
-// ---- USB keyboard handler ----
+// ---- USB keyboard handler (same as before) ----
 
 static unsigned char s_prev_mod = 0;
 static unsigned char s_prev_keys[6] = {0};
@@ -73,12 +67,10 @@ static void KeyStatusHandlerRaw(unsigned char ucMod,
     memcpy(s_prev_keys, Keys, 6);
 }
 
-// ---- CKernel ----------------------------------------------------------------
+// ---- CKernel ----
 
 CKernel::CKernel()
-:   CMultiCoreSupport(&m_Memory),
-    m_Memory(),
-    m_bLaunch(false),
+:   m_Memory(),
     m_Serial(),
     m_Timer(&m_Interrupt),
     m_Logger(m_Options.GetLogLevel(), &m_Timer),
@@ -103,27 +95,22 @@ boolean CKernel::Initialize()
     if (bOK) bOK = m_USBHCI.Initialize();
     if (bOK) bOK = m_EMMC.Initialize();
 
-    // VCHIQ disabled — hangs on Initialize() with multicore enabled.
-    // TODO: investigate doorbell IRQ conflict with ARM_ALLOW_MULTI_CORE
-    // if (bOK && !m_VCHIQ.Initialize())
-    //     m_Logger.Write(FromKernel, LogWarning, "VCHIQ init failed");
+    // VCHIQ before framebuffer (like bmc64)
+    if (bOK) bOK = m_VCHIQ.Initialize();
 
     if (bOK && fatfs_mount() != 0)
         m_Logger.Write(FromKernel, LogWarning, "FatFs mount failed");
 
     circle_audio_set_interrupt(&m_Interrupt);
+    circle_audio_set_vchiq(&m_VCHIQ);
+    circle_audio_init_device();
 
-    // Init framebuffer on core 0 (GPU mailbox must be core 0)
     if (bOK && circle_fb_init(800, 600, 8) != 0)
         m_Logger.Write(FromKernel, LogWarning, "Framebuffer init failed");
-
-    // Start secondary cores — Run(1) spins on m_bLaunch
-    if (bOK) bOK = CMultiCoreSupport::Initialize();
 
     return bOK;
 }
 
-// Core 0: USB host + scheduler loop
 TShutdownMode CKernel::Run()
 {
     m_USBHCI.UpdatePlugAndPlay();
@@ -133,34 +120,6 @@ TShutdownMode CKernel::Run()
     if (pKeyboard)
         pKeyboard->RegisterKeyStatusHandlerRaw(KeyStatusHandlerRaw, FALSE, nullptr);
 
-    // Signal core 1 to start
-    asm volatile("dmb" ::: "memory");
-    m_bLaunch = true;
-    asm volatile("dmb" ::: "memory");
-
-    // Core 0 loops forever: USB plug-and-play + scheduler
-    while (true)
-    {
-        m_Scheduler.Yield();
-        m_USBHCI.UpdatePlugAndPlay();
-    }
-
-    return ShutdownHalt;
-}
-
-// Core 1: Z80 emulation
-void CKernel::Run(unsigned nCore)
-{
-    if (nCore != 1) {
-        // Cores 2, 3: park
-        while (true) asm volatile("wfe");
-    }
-
-    // Wait for core 0 to finish Initialize + USB setup
-    while (!m_bLaunch)
-        asm volatile("dmb" ::: "memory");
-
-    // Run SimCoupe
     static const char *argv0 = "simcoupe";
     static char *argv[] = { const_cast<char*>(argv0), nullptr };
 
@@ -168,6 +127,5 @@ void CKernel::Run(unsigned nCore)
         CPU::Run();
 
     Main::Exit();
-
-    while (true) asm volatile("wfe");
+    return ShutdownHalt;
 }

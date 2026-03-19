@@ -1,8 +1,4 @@
-// kernel.h — SimCoupe Circle kernel (no SDL, multicore)
-//
-// Core 0: Initialize() + Run() — USB, IRQs, scheduler
-// Core 1: Run(1) — SimCoupe Z80 + video + audio
-
+// kernel.h — SimCoupe Circle kernel (monocore + VCHIQ audio test)
 #pragma once
 
 #include <circle/actled.h>
@@ -16,22 +12,20 @@
 #include <circle/memory.h>
 #include <circle/sched/scheduler.h>
 #include <circle/usb/usbhcidevice.h>
-#include <circle/multicore.h>
 #include <circle/types.h>
 #include <SDCard/emmc.h>
 #include <vc4/vchiq/vchiqdevice.h>
 
 enum TShutdownMode { ShutdownNone, ShutdownHalt, ShutdownReboot };
 
-class CKernel : public CMultiCoreSupport
+class CKernel
 {
 public:
     CKernel();
     ~CKernel();
 
     boolean Initialize();
-    TShutdownMode Run();           // Core 0
-    void Run(unsigned nCore) override;  // Core 1+
+    TShutdownMode Run();
 
 private:
     CMemorySystem       m_Memory;
@@ -47,6 +41,4 @@ private:
     CUSBHCIDevice       m_USBHCI;
     CEMMCDevice         m_EMMC;
     CVCHIQDevice        m_VCHIQ;
-
-    volatile bool       m_bLaunch;
 };
