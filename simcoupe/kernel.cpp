@@ -107,7 +107,7 @@ boolean CKernel::Initialize()
     circle_audio_set_interrupt(&m_Interrupt);
 
     // Init framebuffer on core 0 (GPU mailbox must be core 0)
-    if (bOK && circle_fb_init(544, 416, 8) != 0)
+    if (bOK && circle_fb_init(640, 480, 8) != 0)
         m_Logger.Write(FromKernel, LogWarning, "Framebuffer init failed");
 
     // Start secondary cores — Run(1) spins on m_bLaunch
