@@ -10,7 +10,11 @@ kernel=kernel8-32.img
 # ---- Video ----
 # Force HDMI output even if no display detected at boot
 hdmi_force_hotplug=1
-# Let the TV negotiate resolution (no forced mode)
+# 720p safe mode for old TVs
+hdmi_group=1
+hdmi_mode=4
+# Disable overscan (no border cropping)
+disable_overscan=1
 
 # ---- Serial debug ----
 # Disable Bluetooth (frees PL011 UART for serial on GPIO 14/15)
