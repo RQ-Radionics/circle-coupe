@@ -17,6 +17,7 @@
 extern "C" void circle_audio_set_interrupt(void *pInterrupt);
 extern "C" void circle_audio_set_device(void *pDevice);
 extern "C" void circle_audio_start(void);
+extern "C" void circle_audio_activate(void *pDevice);
 extern "C" int  fatfs_mount(void);
 extern "C" int  circle_fb_init(unsigned w, unsigned h, unsigned depth);
 
@@ -29,9 +30,11 @@ extern "C" void circle_simcoupe_key(unsigned hid_scancode, int pressed,
 
 static const char FromKernel[] = "kernel";
 
-// ---- Sound thread signalling (Core 1 → Core 2) ----
-volatile bool g_sound_frame_pending = false;  // set by IO::FrameUpdate on Core 1
-volatile bool g_sound_frame_done    = true;   // set by Core 2 when done
+    // ---- Sound thread signalling (Core 1 → Core 2) ----
+volatile bool g_sound_frame_pending = false;
+volatile bool g_sound_frame_done    = true;
+volatile unsigned g_sound_signal_count = 0;
+volatile unsigned g_core2_exec_count = 0;
 
 // ---- USB keyboard handler ----
 static unsigned char s_prev_mod = 0;
@@ -169,7 +172,10 @@ void CKernel::Run(unsigned nCore)
     else if (nCore == 2)
     {
         // Core 2: Sound synthesis loop
-        // Waits for g_sound_frame_pending, runs Sound::FrameUpdate(), signals done
+        // Activate audio from this core — pass device pointer directly
+        // to avoid cross-core L1 cache visibility issue with s_pSound
+        circle_audio_activate(&m_PWMSound);
+
         while (true)
         {
             asm volatile("dmb" ::: "memory");
@@ -178,6 +184,7 @@ void CKernel::Run(unsigned nCore)
                 g_sound_frame_pending = false;
                 asm volatile("dmb" ::: "memory");
 
+                g_core2_exec_count++;
                 Sound::FrameUpdate();
 
                 asm volatile("dmb" ::: "memory");

@@ -77,8 +77,9 @@ std::unique_ptr<SAADevice> pSAA;
 std::unique_ptr<SIDDevice> pSID;
 
 #ifdef __circle__
-// Sound synthesis signalling — defined in kernel.cpp, used by IO::FrameUpdate
+// Sound synthesis signalling — defined in kernel.cpp
 extern volatile bool g_sound_frame_pending;
+extern volatile unsigned g_sound_signal_count;
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
@@ -839,8 +840,10 @@ void FrameUpdate()
     Input::Update();
 
 #ifdef __circle__
-    if (!Frame::TurboMode())
+    if (!Frame::TurboMode()) {
         g_sound_frame_pending = true;
+        g_sound_signal_count++;
+    }
 #else
     if (!Frame::TurboMode())
         Sound::FrameUpdate();
