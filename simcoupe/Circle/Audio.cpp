@@ -84,9 +84,11 @@ extern "C" void circle_audio_poll(void)
 
     asm volatile("dmb" ::: "memory");
     unsigned used = ring_used();
-    if (used == 0) return;
+    if (used < 4) return;  // need at least 1 stereo frame (4 bytes)
 
-    if (used > 2048) used = 2048;
+    // Align to 4 bytes (one stereo s16 frame)
+    used &= ~3u;
+    if (used > 4096) used = 4096;
 
     unsigned t = s_ring_tail;
     unsigned end = (t + used) % RING_SIZE;
@@ -121,12 +123,16 @@ float Audio::AddData(uint8_t *pData, int len_bytes)
     if (to_write > free) to_write = free;
 
     unsigned h = s_ring_head;
-    for (unsigned i = 0; i < to_write; i++) {
-        s_ring[h] = pData[i];
-        h = (h + 1) % RING_SIZE;
+    unsigned end = (h + to_write) % RING_SIZE;
+    if (end > h) {
+        memcpy(&s_ring[h], pData, to_write);
+    } else {
+        unsigned first = RING_SIZE - h;
+        memcpy(&s_ring[h], pData, first);
+        memcpy(&s_ring[0], pData + first, end);
     }
     asm volatile("dmb" ::: "memory");
-    s_ring_head = h;
+    s_ring_head = end;
 
     return 0.5f;
 }
