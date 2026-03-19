@@ -34,7 +34,7 @@ extern "C" void circle_audio_start(void)
     if (!s_pSound) return;
 
     g_audio_status = "alloc-queue";
-    if (!s_pSound->AllocateQueue(100)) {
+    if (!s_pSound->AllocateQueue(300)) {  // 300ms queue to avoid underrun
         g_audio_status = "alloc-fail";
         s_pSound = nullptr;
         return;
