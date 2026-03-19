@@ -159,8 +159,10 @@ float Audio::AddData(uint8_t *pData, int len_bytes)
         }
         else
         {
-            // Ring full — VCHIQ on core 0 drains it
-            asm volatile("nop");
+            // Ring full — drop samples instead of blocking.
+            // If VCHIQ is not draining, blocking here kills the Z80.
+            // When audio works correctly, this path should rarely hit.
+            break;
         }
     }
 
