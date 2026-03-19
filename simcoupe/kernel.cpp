@@ -108,8 +108,9 @@ boolean CKernel::Initialize()
 
     circle_audio_set_interrupt(&m_Interrupt);
 
-    // Init PWM audio on Core 0 (DMA IRQs must be on Core 0)
-    circle_audio_init_device();
+    // PWM audio disabled — CPWMSoundBaseDevice hangs on this RPi3.
+    // TODO: investigate PWM DMA init failure (circle-coupe-4h1)
+    // circle_audio_init_device();
 
     if (bOK && circle_fb_init(800, 600, 8) != 0)
         m_Logger.Write(FromKernel, LogWarning, "Framebuffer init failed");
