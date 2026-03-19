@@ -15,6 +15,7 @@
 
 // Platform init functions (C linkage)
 extern "C" void circle_audio_set_interrupt(void *pInterrupt);
+extern "C" void circle_audio_init_device(void);
 extern "C" int  fatfs_mount(void);
 extern "C" int  circle_fb_init(unsigned w, unsigned h, unsigned depth);
 
@@ -104,6 +105,9 @@ boolean CKernel::Initialize()
         m_Logger.Write(FromKernel, LogWarning, "FatFs mount failed");
 
     circle_audio_set_interrupt(&m_Interrupt);
+
+    // Init audio on core 0 — DMA IRQs must be registered on core 0
+    circle_audio_init_device();
 
     // Init framebuffer on core 0 (GPU mailbox must be core 0)
     if (bOK && circle_fb_init(544, 416, 8) != 0)

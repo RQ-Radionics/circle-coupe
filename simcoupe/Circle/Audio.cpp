@@ -87,32 +87,30 @@ extern "C" void circle_audio_set_interrupt(void *pInt)
     s_pInterrupt = (CInterruptSystem *)pInt;
 }
 
-// ---- Audio API ----------------------------------------------------------
-
-bool Audio::Init()
+// Called from kernel.cpp on core 0 — DMA IRQs must be registered on core 0.
+extern "C" void circle_audio_init_device(void)
 {
-    Exit();
-
-    if (!s_pInterrupt)
-        return false;
+    if (!s_pInterrupt || s_pSound) return;
 
     constexpr unsigned SAMPLE_RATE = 44100;
-    constexpr unsigned CHUNK_SIZE  = 512;   // smaller = less latency
+    constexpr unsigned CHUNK_SIZE  = 512;
 
     s_pSound = new CircleSound(s_pInterrupt, SAMPLE_RATE, CHUNK_SIZE);
-
-    // GetChunk model: NO AllocateQueue, NO SetWriteFormat.
-    // Just Start() — DMA will call our GetChunk() to pull samples.
-
     if (!s_pSound->Start())
     {
         delete s_pSound;
         s_pSound = nullptr;
-        // Non-fatal: emulator runs without sound
-        return true;
     }
+}
 
-    s_active = true;
+// ---- Audio API ----------------------------------------------------------
+
+bool Audio::Init()
+{
+    // Device already created and started on core 0 via circle_audio_init_device().
+    // We just activate the ring buffer here on core 1.
+    if (s_pSound)
+        s_active = true;
     return true;
 }
 
