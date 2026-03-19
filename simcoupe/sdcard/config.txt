@@ -33,8 +33,9 @@ screen_height=720
 
 # ---- Audio ----
 dtparam=audio=on
-# Force audio output to HDMI (0=auto, 1=jack, 2=HDMI)
+# Force HDMI audio even if display doesn't report support
 hdmi_drive=2
+hdmi_force_edid_audio=1
 
 # ---- Misc ----
 # Disable rainbow splash screen for faster boot
