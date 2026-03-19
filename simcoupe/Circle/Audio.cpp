@@ -115,7 +115,7 @@ void Audio::Exit()
 
 float Audio::AddData(uint8_t *pData, int len_bytes)
 {
-    if (!pData || len_bytes <= 0 || !s_pSound)
+    if (!pData || len_bytes <= 0)
         return 0.5f;
 
     const s16 *src = reinterpret_cast<const s16 *>(pData);
