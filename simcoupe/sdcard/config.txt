@@ -10,10 +10,10 @@ kernel=kernel8-32.img
 # ---- Video ----
 # Force HDMI output even if no display detected at boot
 hdmi_force_hotplug=1
-# 720p safe mode for old TVs
-hdmi_group=1
-hdmi_mode=4
-# Disable overscan (no border cropping)
+# 800x600 @ 60Hz (DMT mode 9) — standard resolution, no overscan
+hdmi_group=2
+hdmi_mode=9
+# Disable overscan
 disable_overscan=1
 
 # ---- Serial debug ----

@@ -89,14 +89,12 @@ public:
         int src_h = fb.Height();
         bool is_gui = GUI::IsActive();
 
-        // Scale to 4:3 with 5% safe margin for TV overscan
-        int safe_w = (int)fb_w * 90 / 100;
-        int safe_h = (int)fb_h * 90 / 100;
-        int dst_w = safe_h * 4 / 3;
-        int dst_h = safe_h;
-        if (dst_w > safe_w) {
-            dst_w = safe_w;
-            dst_h = safe_w * 3 / 4;
+        // Scale to 4:3 filling the screen
+        int dst_w = (int)fb_h * 4 / 3;
+        int dst_h = (int)fb_h;
+        if (dst_w > (int)fb_w) {
+            dst_w = (int)fb_w;
+            dst_h = (int)fb_w * 3 / 4;
         }
 
         int off_x = ((int)fb_w - dst_w) / 2;
