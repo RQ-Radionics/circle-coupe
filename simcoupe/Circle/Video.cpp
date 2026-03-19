@@ -117,15 +117,33 @@ public:
             s_borders_cleared = true;
         }
 
-        // 8-bit blit: write palette indices (1 byte/pixel)
+        // 8-bit blit with dirty-line detection.
+        // Only write lines whose source changed since last frame.
+        // This dramatically reduces uncached GPU writes for static screens.
+        static uint8_t s_prev_lines[512][544];  // max src_h × src_w
         uint8_t *fb8 = (uint8_t *)fbuf;
-        for (int dy = 0; dy < dst_h; dy++)
+
+        for (int sy = 0; sy < src_h; sy++)
         {
-            int sy = dy * src_h / dst_h;
             auto pLine = fb.GetLine(sy);
-            uint8_t *row = fb8 + (off_y + dy) * pitch + off_x;
-            for (int dx = 0; dx < dst_w; dx++)
-                row[dx] = pLine[s_xtab[dx]];
+
+            // Check if this source line changed
+            bool dirty = (memcmp(s_prev_lines[sy], pLine, src_w) != 0);
+            if (!dirty) continue;
+
+            // Cache new line for next comparison
+            memcpy(s_prev_lines[sy], pLine, src_w);
+
+            // Write all destination rows that map to this source line
+            // (with nearest-neighbor scaling, multiple dst rows may map to same src)
+            for (int dy = sy * dst_h / src_h;
+                 dy < (sy + 1) * dst_h / src_h && dy < dst_h;
+                 dy++)
+            {
+                uint8_t *row = fb8 + (off_y + dy) * pitch + off_x;
+                for (int dx = 0; dx < dst_w; dx++)
+                    row[dx] = pLine[s_xtab[dx]];
+            }
         }
 
         if (is_gui)
