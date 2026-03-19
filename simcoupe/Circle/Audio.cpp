@@ -69,6 +69,9 @@ static CInterruptSystem *s_pInterrupt = nullptr;
 static CVCHIQDevice     *s_pVCHIQ     = nullptr;
 static bool              s_active     = false;
 
+// Visible from Frame.cpp for OSD display
+const char *g_audio_status = "no-init";
+
 extern "C" void circle_audio_set_interrupt(void *pInt)
 {
     s_pInterrupt = (CInterruptSystem *)pInt;
@@ -82,19 +85,32 @@ extern "C" void circle_audio_set_vchiq(void *pVCHIQ)
 // Called from kernel.cpp on core 0
 extern "C" void circle_audio_init_device(void)
 {
-    if (!s_pVCHIQ || s_pSound) return;
+    if (!s_pVCHIQ) {
+        g_audio_status = "no-vchiq";
+        return;
+    }
+    if (s_pSound) {
+        g_audio_status = "already";
+        return;
+    }
 
     constexpr unsigned SAMPLE_RATE = 44100;
-    constexpr unsigned CHUNK_SIZE  = 1024;  // like bmc64
+    constexpr unsigned CHUNK_SIZE  = 1024;
 
+    g_audio_status = "creating";
     s_pSound = new CircleVCHIQSound(s_pVCHIQ, SAMPLE_RATE, CHUNK_SIZE,
                                      VCHIQSoundDestinationAuto);
 
+    g_audio_status = "starting";
     if (!s_pSound->Start())
     {
+        g_audio_status = "start-fail";
         delete s_pSound;
         s_pSound = nullptr;
+        return;
     }
+
+    g_audio_status = "running";
 }
 
 // ---- Audio API ----------------------------------------------------------
