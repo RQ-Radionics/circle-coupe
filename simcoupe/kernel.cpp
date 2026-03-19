@@ -89,7 +89,7 @@ CKernel::CKernel()
     m_Scheduler(),
     m_USBHCI(&m_Interrupt, &m_Timer, TRUE),
     m_EMMC(&m_Interrupt, &m_Timer),
-    m_PWMSound(&m_Interrupt, 16384, 512),
+    m_PWMSound(&m_Interrupt, 11025, 256),
     m_bLaunch(false)
 {
     m_ActLED.Blink(5);
