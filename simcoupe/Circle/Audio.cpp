@@ -1,23 +1,21 @@
 // Part of SimCoupe - A SAM Coupe emulator
 //
-// Audio.cpp: Circle bare-metal audio via VCHIQ (HDMI/headphone)
+// Audio.cpp: Circle bare-metal audio via PWM (jack 3.5mm)
 //
-// Same approach as bmc64: CVCHIQSoundBaseDevice with GetChunk override.
-// VCHIQ talks to the GPU VideoCore which handles HDMI audio output.
-//
-// DMA at 44100Hz is the natural master clock for emulation speed.
+// GetChunk pull model: DMA IRQ on Core 0 calls GetChunk() which reads
+// from a ring buffer. Sound::FrameUpdate() on Core 2 pushes samples
+// via Audio::AddData(). Core 1 (Z80) is not involved.
 
 #include "SimCoupe.h"
 #include "Audio.h"
 #include "Sound.h"
 #include "Options.h"
 
-#include <vc4/sound/vchiqsoundbasedevice.h>
-#include <vc4/vchiq/vchiqdevice.h>
+#include <circle/sound/pwmsoundbasedevice.h>
 #include <circle/interrupt.h>
 #include <circle/timer.h>
 
-// ---- Ring buffer (lock-free: core 1 writes, core 0 VCHIQ reads) ---------
+// ---- Ring buffer (lock-free: Core 2 writes, Core 0 DMA reads) -----------
 
 static constexpr unsigned RING_FRAMES  = 4096;
 static constexpr unsigned RING_CH      = 2;
@@ -30,46 +28,48 @@ static volatile unsigned s_ring_tail = 0;
 static inline unsigned ring_used() {
     return (s_ring_head - s_ring_tail + RING_SAMPLES) % RING_SAMPLES;
 }
+static inline unsigned ring_free() {
+    return RING_SAMPLES - ring_used() - 1;
+}
 
-// ---- VCHIQ sound device with GetChunk override (like bmc64) -------------
+// ---- PWM sound device with GetChunk override ----------------------------
 
-class CircleVCHIQSound : public CVCHIQSoundBaseDevice
+class CirclePWMSound : public CPWMSoundBaseDevice
 {
 public:
-    CircleVCHIQSound(CVCHIQDevice *pVCHIQ, unsigned nSampleRate,
-                     unsigned nChunkSize,
-                     TVCHIQSoundDestination dest = VCHIQSoundDestinationAuto)
-    : CVCHIQSoundBaseDevice(pVCHIQ, nSampleRate, nChunkSize, dest) {}
+    CirclePWMSound(CInterruptSystem *pInt, unsigned nSampleRate, unsigned nChunk)
+    : CPWMSoundBaseDevice(pInt, nSampleRate, nChunk) {}
 
 protected:
-    unsigned GetChunk(s16 *pBuffer, unsigned nChunkSize) override
+    unsigned GetChunk(u32 *pBuffer, unsigned nChunkSize) override
     {
-        // nChunkSize = number of samples (not frames) to fill
-        unsigned filled = 0;
-        asm volatile("dmb" ::: "memory");
-        while (filled < nChunkSize && ring_used() > 0)
+        for (unsigned i = 0; i < nChunkSize; i++)
         {
-            unsigned t = s_ring_tail;
-            pBuffer[filled++] = s_ring[t];
-            t = (t + 1) % RING_SAMPLES;
+            s16 l = 0, r = 0;
             asm volatile("dmb" ::: "memory");
-            s_ring_tail = t;
+            if (ring_used() >= 2)
+            {
+                unsigned t = s_ring_tail;
+                l = s_ring[t]; t = (t + 1) % RING_SAMPLES;
+                r = s_ring[t]; t = (t + 1) % RING_SAMPLES;
+                asm volatile("dmb" ::: "memory");
+                s_ring_tail = t;
+            }
+            // PWM: unsigned 16-bit per channel, centre=0x8000
+            u32 ul = (u32)((u16)(l + 32768));
+            u32 ur = (u32)((u16)(r + 32768));
+            pBuffer[i] = (ur << 16) | ul;
         }
-        // Fill rest with silence if ring underrun
-        while (filled < nChunkSize)
-            pBuffer[filled++] = 0;
         return nChunkSize;
     }
 };
 
 // ---- Module state -------------------------------------------------------
 
-static CircleVCHIQSound *s_pSound     = nullptr;
+static CirclePWMSound   *s_pSound     = nullptr;
 static CInterruptSystem *s_pInterrupt = nullptr;
-static CVCHIQDevice     *s_pVCHIQ     = nullptr;
 static bool              s_active     = false;
 
-// Visible from Frame.cpp for OSD display
 const char *g_audio_status = "no-init";
 
 extern "C" void circle_audio_set_interrupt(void *pInt)
@@ -77,29 +77,19 @@ extern "C" void circle_audio_set_interrupt(void *pInt)
     s_pInterrupt = (CInterruptSystem *)pInt;
 }
 
-extern "C" void circle_audio_set_vchiq(void *pVCHIQ)
-{
-    s_pVCHIQ = (CVCHIQDevice *)pVCHIQ;
-}
+// Unused VCHIQ stubs (kept for link compatibility)
+extern "C" void circle_audio_set_vchiq(void *) {}
 
-// Called from kernel.cpp on core 0
+// Called from kernel.cpp on Core 0 — DMA IRQs must be on Core 0
 extern "C" void circle_audio_init_device(void)
 {
-    if (!s_pVCHIQ) {
-        g_audio_status = "no-vchiq";
-        return;
-    }
-    if (s_pSound) {
-        g_audio_status = "already";
-        return;
-    }
+    if (!s_pInterrupt || s_pSound) return;
 
     constexpr unsigned SAMPLE_RATE = 44100;
-    constexpr unsigned CHUNK_SIZE  = 1024;
+    constexpr unsigned CHUNK_SIZE  = 512;
 
     g_audio_status = "creating";
-    s_pSound = new CircleVCHIQSound(s_pVCHIQ, SAMPLE_RATE, CHUNK_SIZE,
-                                     VCHIQSoundDestinationAuto);
+    s_pSound = new CirclePWMSound(s_pInterrupt, SAMPLE_RATE, CHUNK_SIZE);
 
     g_audio_status = "starting";
     if (!s_pSound->Start())
@@ -134,8 +124,6 @@ void Audio::Exit()
     s_ring_head = s_ring_tail = 0;
 }
 
-// Called every frame with stereo int16 PCM.
-// Busy-waits when ring buffer full — VCHIQ DMA drains at 44100Hz.
 float Audio::AddData(uint8_t *pData, int len_bytes)
 {
     if (!s_active || !pData || len_bytes <= 0)
@@ -148,8 +136,7 @@ float Audio::AddData(uint8_t *pData, int len_bytes)
     while (written < n)
     {
         asm volatile("dmb" ::: "memory");
-        unsigned free = (RING_SAMPLES - ring_used() - 1);
-        if (free >= 2)
+        if (ring_free() >= 2)
         {
             unsigned h = s_ring_head;
             s_ring[h] = src[written++]; h = (h + 1) % RING_SAMPLES;
@@ -159,9 +146,8 @@ float Audio::AddData(uint8_t *pData, int len_bytes)
         }
         else
         {
-            // Ring full — busy-wait. VCHIQ DMA on Core 0 drains at 44100Hz.
-            // This is the master clock that regulates Z80 to real-time speed.
-            asm volatile("nop");
+            // Ring full — drop remaining samples
+            break;
         }
     }
 

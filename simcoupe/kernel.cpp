@@ -15,7 +15,6 @@
 #include <string.h>
 
 extern "C" void circle_audio_set_interrupt(void *pInterrupt);
-extern "C" void circle_audio_set_vchiq(void *pVCHIQ);
 extern "C" void circle_audio_init_device(void);
 extern "C" int  fatfs_mount(void);
 extern "C" int  circle_fb_init(unsigned w, unsigned h, unsigned depth);
@@ -86,7 +85,6 @@ CKernel::CKernel()
     m_Scheduler(),
     m_USBHCI(&m_Interrupt, &m_Timer, TRUE),
     m_EMMC(&m_Interrupt, &m_Timer),
-    m_VCHIQ(&m_Memory, &m_Interrupt),
     m_bLaunch(false)
 {
     m_ActLED.Blink(5);
@@ -110,8 +108,8 @@ boolean CKernel::Initialize()
 
     circle_audio_set_interrupt(&m_Interrupt);
 
-    // VCHIQ disabled — hangs on this RPi3 both before and after multicore init.
-    // Audio throttle done via timer in Frame::Sync() instead.
+    // Init PWM audio on Core 0 (DMA IRQs must be on Core 0)
+    circle_audio_init_device();
 
     if (bOK && circle_fb_init(800, 600, 8) != 0)
         m_Logger.Write(FromKernel, LogWarning, "Framebuffer init failed");
