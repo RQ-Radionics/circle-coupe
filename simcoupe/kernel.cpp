@@ -106,9 +106,6 @@ boolean CKernel::Initialize()
 
     circle_audio_set_interrupt(&m_Interrupt);
 
-    // Init audio on core 0 — DMA IRQs must be registered on core 0
-    circle_audio_init_device();
-
     // Init framebuffer on core 0 (GPU mailbox must be core 0)
     if (bOK && circle_fb_init(544, 416, 8) != 0)
         m_Logger.Write(FromKernel, LogWarning, "Framebuffer init failed");
@@ -128,6 +125,9 @@ TShutdownMode CKernel::Run()
         CDeviceNameService::Get()->GetDevice("ukbd1", FALSE);
     if (pKeyboard)
         pKeyboard->RegisterKeyStatusHandlerRaw(KeyStatusHandlerRaw, FALSE, nullptr);
+
+    // Init audio on core 0 after everything else — DMA IRQs need core 0
+    circle_audio_init_device();
 
     // Signal core 1 to start
     asm volatile("dmb" ::: "memory");
