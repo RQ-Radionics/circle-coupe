@@ -79,14 +79,14 @@ unsigned circle_fb_get_depth(void)
     return s_pFrameBuffer ? s_pFrameBuffer->GetDepth() : 0;
 }
 
-/* Returns pointer to the framebuffer (single-buffer mode — always base address) */
+/* Returns pointer to the BACK buffer (the one we draw into) */
 void *circle_fb_get_buffer(void)
 {
     if (!s_pFrameBuffer) return nullptr;
-    /* Single buffer: always return the base address.
-     * The old s_back_buffer offset is gone — there is no back buffer. */
-    return reinterpret_cast<void *>(
+    uint8_t *base = reinterpret_cast<uint8_t *>(
         static_cast<uintptr_t>(s_pFrameBuffer->GetBuffer()));
+    /* back_buffer=0 -> top half, back_buffer=1 -> bottom half */
+    return base + s_back_buffer * s_height * s_pitch;
 }
 
 /* Flip: show the back buffer immediately, no waiting.
