@@ -140,6 +140,18 @@ public:
         // Only write lines whose source changed since last frame.
         // This dramatically reduces uncached GPU writes for static screens.
         static uint8_t s_prev_lines[512][544];  // max src_h × src_w
+        static int s_prev_src_h = 0;
+        if (src_h > s_prev_src_h) {
+            // src_h grew (e.g. game → GUI: 208 → 416). The rows from
+            // s_prev_src_h to src_h-1 were never written into s_prev_lines,
+            // so they contain zeros/garbage and will falsely compare as
+            // "clean" against the new pGuiScreen rows — causing the bottom
+            // half of the screen to not be redrawn.
+            // Invalidate only the new rows so they are forced dirty this frame.
+            memset(s_prev_lines[s_prev_src_h], 0xFF,
+                   (src_h - s_prev_src_h) * sizeof(s_prev_lines[0]));
+        }
+        s_prev_src_h = src_h;
         uint8_t *fb8 = (uint8_t *)fbuf;
 
         for (int sy = 0; sy < src_h; sy++)
