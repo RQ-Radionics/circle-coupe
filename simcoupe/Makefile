@@ -100,10 +100,33 @@ LDFLAGS += --no-enum-size-warning
 # Allow multiple definitions (Circle and newlib both define strtoul, __cxa_guard, etc.)
 LDFLAGS += --allow-multiple-definition
 
-# ---- Rebuild Circle libs if RASPPI changed ----
-# Circle libs must be compiled with the correct RASPPI so the CPU/arch flags match.
-# We rebuild them here before linking.
+# ---- Rebuild Circle libs for the correct RASPPI ----
+# Circle libs embed CPU-specific code (-mcpu=cortex-aX). Since the Circle
+# build system compiles objects in-place (no per-RASPPI output dirs), we
+# must clean and rebuild whenever RASPPI changes to avoid mixing A53/A7 objects.
+#
+# We detect the current RASPPI by checking the CPU flags inside libcircle.a.
+# If they don't match, we clean all Circle libs first, then rebuild.
+CIRCLE_CURRENT_CPU := $(shell strings $(CIRCLEHOME)/lib/libcircle.a 2>/dev/null | grep -o 'mcpu=cortex-a[0-9]*' | head -1)
+ifeq ($(strip $(RASPPI)),2)
+  CIRCLE_EXPECTED_CPU = mcpu=cortex-a7
+else
+  CIRCLE_EXPECTED_CPU = mcpu=cortex-a53
+endif
+
 circle-libs:
+	@if [ "$(CIRCLE_CURRENT_CPU)" != "$(CIRCLE_EXPECTED_CPU)" ]; then \
+		echo "  CLEAN Circle libs + local objects (was $(CIRCLE_CURRENT_CPU), need $(CIRCLE_EXPECTED_CPU))"; \
+		$(MAKE) -C $(CIRCLEHOME)/lib          RASPPI=$(RASPPI) clean; \
+		$(MAKE) -C $(CIRCLEHOME)/lib/usb      RASPPI=$(RASPPI) clean; \
+		$(MAKE) -C $(CIRCLEHOME)/lib/input    RASPPI=$(RASPPI) clean; \
+		$(MAKE) -C $(CIRCLEHOME)/lib/sound    RASPPI=$(RASPPI) clean; \
+		$(MAKE) -C $(CIRCLEHOME)/lib/sched    RASPPI=$(RASPPI) clean; \
+		$(MAKE) -C $(CIRCLEHOME)/lib/fs       RASPPI=$(RASPPI) clean; \
+		$(MAKE) -C $(CIRCLEHOME)/addon/fatfs  RASPPI=$(RASPPI) clean; \
+		$(MAKE) -C $(CIRCLEHOME)/addon/SDCard RASPPI=$(RASPPI) clean; \
+		rm -f *.o ../kernel/syscalls.o; \
+	fi
 	$(MAKE) -C $(CIRCLEHOME)/lib          RASPPI=$(RASPPI)
 	$(MAKE) -C $(CIRCLEHOME)/lib/usb      RASPPI=$(RASPPI)
 	$(MAKE) -C $(CIRCLEHOME)/lib/input    RASPPI=$(RASPPI)
@@ -144,7 +167,8 @@ circle_fb.o: ../src/video/circle/SDL_circlefb.cpp
 	$(CPP) $(CPPFLAGS) $(INCLUDE) -c $< -o $@
 
 # ---- SD card image assembly ----
-SDCARD_DIR = sdcard
+SDCARD_DIR   = sdcard-pi$(RASPPI)/sdcard
+CONFIG_DIR   = sdcard-pi$(RASPPI)
 FIRMWARE_DIR = $(CIRCLEHOME)/boot
 
 .PHONY: sdcard firmware-check circle-libs
@@ -158,7 +182,8 @@ sdcard: all firmware-check
 	cp -f $(FIRMWARE_DIR)/bootcode.bin $(SDCARD_DIR)/
 	cp -f $(FIRMWARE_DIR)/start.elf    $(SDCARD_DIR)/
 	cp -f $(FIRMWARE_DIR)/fixup.dat    $(SDCARD_DIR)/
-	cp -f $(TARGET).img $(SDCARD_DIR)/
+	cp -f $(TARGET).img                $(SDCARD_DIR)/
+	cp -f $(CONFIG_DIR)/config.txt     $(SDCARD_DIR)/
 	@echo ""
 	@echo "SD card layout ready in $(SDCARD_DIR)/:"
 	@ls -1 $(SDCARD_DIR)/
