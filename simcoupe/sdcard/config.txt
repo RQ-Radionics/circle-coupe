@@ -1,44 +1,36 @@
-# circle-coupe: SimCoupe SAM Coupe emulator on Raspberry Pi 3B
-# Place this file on the FAT32 boot partition of the SD card.
+# circle-coupe: SimCoupe SAM Coupe emulator
+# Single config.txt for all supported Raspberry Pi models.
+# The firmware automatically applies only the section matching the board.
 
-# ---- Boot ----
-# 32-bit kernel (AArch32)
+# ---- Common (all models) ----
 arm_64bit=0
-# Kernel filename for RPi3 (ARMv8 in 32-bit mode)
-kernel=kernel8-32.img
-
-# ---- Video ----
-# Force HDMI output even if no display detected at boot
 hdmi_force_hotplug=1
-# 800x600 @ 60Hz (DMT mode 9) — standard resolution, no overscan
 hdmi_group=2
 hdmi_mode=9
-# Disable overscan
 disable_overscan=1
-
-# ---- Serial debug ----
-# Disable Bluetooth (frees PL011 UART for serial on GPIO 14/15)
-dtoverlay=disable-bt
-# Enable UART (115200 baud on GPIO 14 TX / 15 RX)
+disable_splash=1
+dtparam=audio=on
 enable_uart=1
 
-# ---- GPU/Memory ----
-# 1280*720*4*2 (double-buffer) = ~7.4MB framebuffer
+# ---- Raspberry Pi 2B ----
+[pi2]
+kernel=kernel7.img
+gpu_mem=64
+screen_width=800
+screen_height=600
+# Pi2 has no Bluetooth — PL011 UART available directly, no overlay needed
+
+# ---- Raspberry Pi 3B ----
+[pi3]
+kernel=kernel8-32.img
 gpu_mem=128
-
-# ---- Circle screen parameters ----
-# Required for CKernelOptions::GetWidth/Height()
-screen_width=1280
-screen_height=720
-
-# ---- Audio ----
-dtparam=audio=on
-# Force HDMI audio even if display doesn't report support
+screen_width=800
+screen_height=600
+# Disable Bluetooth to free PL011 UART for serial debug on GPIO 14/15
+dtoverlay=disable-bt
+# Force HDMI audio
 hdmi_drive=2
 hdmi_force_edid_audio=1
 
-# ---- Misc ----
-# Disable rainbow splash screen for faster boot
-disable_splash=1
-# No overscan (use full HDMI area)
-disable_overscan=1
+# ---- Back to all models ----
+[all]
