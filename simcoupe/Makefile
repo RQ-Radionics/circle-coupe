@@ -1,29 +1,44 @@
 #
 # simcoupe/Makefile
 #
-# SimCoupe Circle bare-metal kernel for Raspberry Pi 3B (AArch32)
-# Output: kernel8-32.img
+# SimCoupe Circle bare-metal kernel — multi-platform build
 #
-# Build order:
-#   1. cmake -B ../build -DCMAKE_TOOLCHAIN_FILE=../cmake/circle-toolchain.cmake
-#   2. cmake --build ../build              (builds SDL3-circle + libsimcoupe.a)
-#   3. make -C ../circle/addon/fatfs       (if not already built)
-#   4. make -C ../circle/addon/SDCard      (if not already built)
-#   5. make                                (this file: links kernel8-32.img)
+# Supported targets:
+#   make                  → Pi3 (default, kernel8-32.img)
+#   make RASPPI=3         → Pi3 (kernel8-32.img, Cortex-A53)
+#   make RASPPI=2         → Pi2B (kernel7.img, Cortex-A7)
 #
-# Strategy: SimCoupe is built as libsimcoupe.a by CMake (with all
-# FetchContent deps, SDL3 migration, FatFs FILE shim). This Makefile
-# only compiles the Circle entry points (main.o, kernel.o, posix_stubs.o)
-# and links everything into kernel8-32.img via Circle's Rules.mk.
+# Full clean rebuild for a given platform:
+#   make clean && make RASPPI=2
+#
+# Build order (handled automatically by this Makefile):
+#   1. cmake -B ../build-pi<N> -DCMAKE_TOOLCHAIN_FILE=../cmake/circle-toolchain-pi<N>.cmake
+#   2. cmake --build ../build-pi<N>        (builds SDL3-circle + libsimcoupe.a)
+#   3. make -C ../circle/lib RASPPI=<N>    (Circle libs)
+#   4. make -C ../circle/addon/fatfs RASPPI=<N>
+#   5. make -C ../circle/addon/SDCard RASPPI=<N>
+#   6. make RASPPI=<N>                     (this file: links kernel)
 #
 
 CIRCLEHOME = ../circle
+
+# ---- Platform selection (default: Pi3) ----
+RASPPI ?= 3
+
+ifeq ($(strip $(RASPPI)),2)
+  TOOLCHAIN_FILE  = ../cmake/circle-toolchain-pi2.cmake
+  CMAKE_BUILD     = ../build-pi2
+else ifeq ($(strip $(RASPPI)),3)
+  TOOLCHAIN_FILE  = ../cmake/circle-toolchain.cmake
+  CMAKE_BUILD     = ../build
+else
+  $(error RASPPI must be 2 or 3)
+endif
 
 # ---- Object files (Circle entry points only) ----
 OBJS = main.o kernel.o posix_stubs.o fatfs_posix.o ../kernel/syscalls.o circle_fb.o
 
 # ---- CMake build output ----
-CMAKE_BUILD = ../build
 SDL3_LIB_DIR = $(CMAKE_BUILD)/src
 SIMCOUPE_LIB = $(CMAKE_BUILD)/simcoupe/libsimcoupe.a
 
@@ -85,17 +100,33 @@ LDFLAGS += --no-enum-size-warning
 # Allow multiple definitions (Circle and newlib both define strtoul, __cxa_guard, etc.)
 LDFLAGS += --allow-multiple-definition
 
+# ---- Rebuild Circle libs if RASPPI changed ----
+# Circle libs must be compiled with the correct RASPPI so the CPU/arch flags match.
+# We rebuild them here before linking.
+circle-libs:
+	$(MAKE) -C $(CIRCLEHOME)/lib          RASPPI=$(RASPPI)
+	$(MAKE) -C $(CIRCLEHOME)/lib/usb      RASPPI=$(RASPPI)
+	$(MAKE) -C $(CIRCLEHOME)/lib/input    RASPPI=$(RASPPI)
+	$(MAKE) -C $(CIRCLEHOME)/lib/sound    RASPPI=$(RASPPI)
+	$(MAKE) -C $(CIRCLEHOME)/lib/sched    RASPPI=$(RASPPI)
+	$(MAKE) -C $(CIRCLEHOME)/lib/fs       RASPPI=$(RASPPI)
+	$(MAKE) -C $(CIRCLEHOME)/addon/fatfs  RASPPI=$(RASPPI)
+	$(MAKE) -C $(CIRCLEHOME)/addon/SDCard RASPPI=$(RASPPI)
+
 # ---- Rebuild libsimcoupe.a (and SDL3 libs) via CMake whenever sources change ----
-# This ensures 'make' picks up edits to Frame.cpp, SDL20.cpp, Input.cpp, etc.
-# without needing a manual 'cmake --build' first.
 CMAKE_SOURCES := $(shell find ../simcoupe/Base ../simcoupe/Circle ../simcoupe/SDL ../src/video/circle -name '*.cpp' -o -name '*.c' -o -name '*.h' 2>/dev/null)
 
 $(SIMCOUPE_LIB): $(CMAKE_SOURCES)
-	@echo "  CMAKE $(CMAKE_BUILD)"
+	@echo "  CMAKE $(CMAKE_BUILD) [RASPPI=$(RASPPI)]"
+	@if [ ! -f $(CMAKE_BUILD)/CMakeCache.txt ]; then \
+		echo "  CMAKE configure $(CMAKE_BUILD)"; \
+		cmake -B $(CMAKE_BUILD) -DCMAKE_TOOLCHAIN_FILE=$(TOOLCHAIN_FILE) \
+		      -DCMAKE_SOURCE_DIR=.. $(CURDIR)/.. ; \
+	fi
 	cmake --build $(CMAKE_BUILD) --parallel $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-# Make the kernel depend on the CMake lib so linking re-runs after cmake rebuild
-$(TARGET).img: $(SIMCOUPE_LIB)
+# Make the kernel depend on the CMake lib and Circle libs
+$(TARGET).img: $(SIMCOUPE_LIB) circle-libs
 
 # ---- posix_stubs.cpp: needs Circle types FIRST to avoid time_t conflict ----
 posix_stubs.o: posix_stubs.cpp
@@ -107,7 +138,7 @@ fatfs_posix.o: ../src/fatfs_posix.cpp
 	@echo "  CPP   $@"
 	$(CPP) $(CPPFLAGS) $(INCLUDE) -c $< -o $@
 
-# ---- circle_fb: framebuffer backend (double-buffered CBcmFrameBuffer) ----
+# ---- circle_fb: framebuffer backend (single-buffered CBcmFrameBuffer) ----
 circle_fb.o: ../src/video/circle/SDL_circlefb.cpp
 	@echo "  CPP   $@"
 	$(CPP) $(CPPFLAGS) $(INCLUDE) -c $< -o $@
@@ -116,17 +147,18 @@ circle_fb.o: ../src/video/circle/SDL_circlefb.cpp
 SDCARD_DIR = sdcard
 FIRMWARE_DIR = $(CIRCLEHOME)/boot
 
-.PHONY: sdcard firmware-check
+.PHONY: sdcard firmware-check circle-libs
+
 firmware-check:
 	@test -f $(FIRMWARE_DIR)/bootcode.bin || { echo "ERROR: RPi firmware not found. Run: make -C $(FIRMWARE_DIR) firmware"; exit 1; }
 
 sdcard: all firmware-check
-	@echo "=== Assembling SD card in $(SDCARD_DIR)/ ==="
+	@echo "=== Assembling SD card in $(SDCARD_DIR)/ [RASPPI=$(RASPPI)] ==="
 	@mkdir -p $(SDCARD_DIR)/simcoupe
 	cp -f $(FIRMWARE_DIR)/bootcode.bin $(SDCARD_DIR)/
 	cp -f $(FIRMWARE_DIR)/start.elf    $(SDCARD_DIR)/
 	cp -f $(FIRMWARE_DIR)/fixup.dat    $(SDCARD_DIR)/
-	cp -f kernel8-32.img $(SDCARD_DIR)/
+	cp -f $(TARGET).img $(SDCARD_DIR)/
 	@echo ""
 	@echo "SD card layout ready in $(SDCARD_DIR)/:"
 	@ls -1 $(SDCARD_DIR)/
