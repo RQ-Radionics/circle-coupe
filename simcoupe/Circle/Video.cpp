@@ -140,6 +140,17 @@ public:
         // Only write lines whose source changed since last frame.
         // This dramatically reduces uncached GPU writes for static screens.
         static uint8_t s_prev_lines[512][544];  // max src_h × src_w
+        static int s_prev_src_h = 0;
+        if (src_h != s_prev_src_h) {
+            // src_h changes when switching between GUI mode (2× height) and game
+            // mode (1× height). Force all lines dirty so the full screen is
+            // redrawn — otherwise the dirty-line cache has stale data for the
+            // rows that were never written in the previous mode, causing the
+            // bottom half of the screen to show old framebuffer content.
+            memset(s_prev_lines, 0xFF, sizeof(s_prev_lines));
+            s_borders_cleared = false;  // also re-clear letterbox borders
+            s_prev_src_h = src_h;
+        }
         uint8_t *fb8 = (uint8_t *)fbuf;
 
         for (int sy = 0; sy < src_h; sy++)
