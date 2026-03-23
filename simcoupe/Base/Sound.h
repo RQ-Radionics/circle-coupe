@@ -79,6 +79,13 @@ public:
     }
 
 public:
+    void Reset() override
+    {
+        if (m_pSAASound)
+            m_pSAASound->Clear();  // Reset all SAA registers and filter state
+        m_samples_this_frame = 0;
+    }
+
     void Update(bool fFrameEnd_);
     void FrameEnd() override;
 

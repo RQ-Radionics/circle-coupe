@@ -161,6 +161,7 @@ bool Init()
     }
 
     pDAC->Reset();
+    pSAA->Reset();  // Reset SAA filter state to prevent audio corruption
     pSID->Reset();
     pSampler->Reset();
     pVoiceBox->Reset();

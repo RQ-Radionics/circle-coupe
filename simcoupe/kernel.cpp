@@ -15,10 +15,10 @@
 #include <string.h>
 
 // Audio configuration: sample rate and chunk size
-// Chunk size = sample_rate / 50 gives ~20ms per DMA buffer
-// This matches the 50Hz frame rate and prevents underruns
+// Circle PWM DMA requires minimum chunk size (typically 128+ samples)
+// Using 512 as safe default, sample rate at 22050 for better quality than 8k
 constexpr unsigned SAMPLE_RATE = 22050;
-constexpr unsigned CHUNK_SIZE  = SAMPLE_RATE / 50;  // = 441 samples (~20ms)
+constexpr unsigned CHUNK_SIZE  = 512;  // Safe DMA size (~23ms @ 22050Hz)
 
 extern "C" void circle_audio_set_interrupt(void *pInterrupt);
 extern "C" void circle_audio_set_device(void *pDevice);
