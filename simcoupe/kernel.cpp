@@ -14,6 +14,12 @@
 #include <circle/input/mouse.h>
 #include <string.h>
 
+// Audio configuration: sample rate and chunk size
+// Chunk size = sample_rate / 50 gives ~20ms per DMA buffer
+// This matches the 50Hz frame rate and prevents underruns
+constexpr unsigned SAMPLE_RATE = 22050;
+constexpr unsigned CHUNK_SIZE  = SAMPLE_RATE / 50;  // = 441 samples (~20ms)
+
 extern "C" void circle_audio_set_interrupt(void *pInterrupt);
 extern "C" void circle_audio_set_device(void *pDevice);
 extern "C" void circle_audio_start(void);
@@ -89,7 +95,7 @@ CKernel::CKernel()
     m_Scheduler(),
     m_USBHCI(&m_Interrupt, &m_Timer, TRUE),
     m_EMMC(&m_Interrupt, &m_Timer),
-    m_PWMSound(&m_Interrupt, 8000, 160),
+    m_PWMSound(&m_Interrupt, SAMPLE_RATE, CHUNK_SIZE),
     m_bLaunch(false)
 {
     m_ActLED.Blink(5);
