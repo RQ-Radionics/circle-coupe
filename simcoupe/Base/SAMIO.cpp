@@ -161,10 +161,13 @@ bool Init()
     }
 
     pDAC->Reset();
-    pSAA->Reset();  // Reset SAA filter state to prevent audio corruption
+    pSAA->Reset();
     pSID->Reset();
     pSampler->Reset();
     pVoiceBox->Reset();
+
+    // Reset audio usage tracking so SAA is not mixed after reset
+    Sound::ResetUsedFlags();
 
     pFloppy1->Reset();
     pFloppy2->Reset();

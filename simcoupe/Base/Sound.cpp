@@ -36,10 +36,21 @@ extern "C" void circle_delay_ns(unsigned long long ns);
 
 static uint8_t* pbSampleBuffer;
 
-static void MixAudio(uint8_t* pDst_, const uint8_t* pSrc_, int nLen_);
+static void MixAudio(uint8_t* pDst_, const uint8_t* pSrc_, int nLen_, int nAttenuationDB = 6);
 static int AdjustSpeed(uint8_t* pb_, int nSize_, int nSpeed_);
 
 //////////////////////////////////////////////////////////////////////////////
+
+static bool fSidUsed = false;
+static bool sp0256_used = false;
+static bool fSaaUsed = false;
+
+void Sound::ResetUsedFlags()
+{
+    fSidUsed = false;
+    sp0256_used = false;
+    fSaaUsed = false;
+}
 
 bool Sound::Init()
 {
@@ -65,15 +76,13 @@ void Sound::Exit()
 
 void Sound::FrameUpdate()
 {
-    static bool fSidUsed = false;
-    static bool sp0256_used = false;
-
     // Track whether devices have been used, to avoid unnecessary sample generation+mixing
     fSidUsed |= pSID->GetSampleCount() != 0;
     sp0256_used |= pVoiceBox->GetSampleCount() != 0;
+    fSaaUsed |= pSAA->GetSampleCount() != 0;
 
     pDAC->FrameEnd();   // set the actual sample count
-    pSAA->FrameEnd();   // catch-up to the DAC position
+    if (fSaaUsed) pSAA->FrameEnd();   // catch-up to the DAC position, only if used
     if (fSidUsed) pSID->FrameEnd();
     if (sp0256_used) pVoiceBox->FrameEnd();
 
@@ -82,8 +91,9 @@ void Sound::FrameUpdate()
     int nSize = nSamples * BYTES_PER_SAMPLE;
 
     // Copy in the DAC samples, then mix SAA and possibly SID too
+    // SAA is attenuated by 6dB (~50%) to prevent clipping on high polyphony
     memcpy(pbSampleBuffer, pDAC->GetSampleBuffer(), nSize);
-    MixAudio(pbSampleBuffer, pSAA->GetSampleBuffer(), nSize);
+    if (fSaaUsed) MixAudio(pbSampleBuffer, pSAA->GetSampleBuffer(), nSize, 6);  // -6dB attenuation
     if (fSidUsed && GetOption(sid)) MixAudio(pbSampleBuffer, pSID->GetSampleBuffer(), nSize);
     if (sp0256_used && GetOption(voicebox)) MixAudio(pbSampleBuffer, pVoiceBox->GetSampleBuffer(), nSize);
 
@@ -239,20 +249,29 @@ int DAC::GetSamplesSoFar()
 void BeeperDevice::Out(uint16_t /*wPort_*/, uint8_t bVal_)
 {
     if (pDAC)
-        pDAC->Output((bVal_ & BORDER_BEEP_MASK) ? 0x30 : 0x00);
+        // Center the BEEP around 128 (unsigned midpoint) so silence is at 0 in signed
+        pDAC->Output((bVal_ & BORDER_BEEP_MASK) ? (0x80 + 0x20) : 0x80);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// Basic audio mixing
-static void MixAudio(uint8_t* pDst_, const uint8_t* pSrc_, int nLen_)
+// Basic audio mixing with attenuation to prevent saturation
+// SAA has 6 channels, so we attenuate by ~50% to prevent clipping on high polyphony
+static void MixAudio(uint8_t* pDst_, const uint8_t* pSrc_, int nLen_, int nAttenuationDB)
 {
+    // Attenuation factor: 6dB ~= 0.5x, 3dB ~= 0.7x
+    int attenNum = (nAttenuationDB == 6) ? 1 : 2;
+    int attenDen = (nAttenuationDB == 6) ? 2 : 3;
+    
     for (nLen_ /= 2; nLen_-- > 0; pSrc_ += 2, pDst_ += 2)
     {
         // Add two 16-bit samples
         short s1 = (pSrc_[1] << 8) | pSrc_[0];
         short s2 = (pDst_[1] << 8) | pDst_[0];
-        int samp = s1 + s2;
+        
+        // Apply attenuation to source before mixing to prevent saturation
+        int s1_atten = (s1 * attenNum) / attenDen;
+        int samp = s1_atten + s2;
 
         // Clip to signed range
         samp = std::min(samp, 32767);

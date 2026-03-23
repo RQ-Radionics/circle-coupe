@@ -44,6 +44,7 @@ public:
     static bool Init();
     static void Exit();
     static void FrameUpdate();
+    static void ResetUsedFlags();  // Reset audio device usage tracking (call on reset)
 };
 
 class SoundDevice : public IoDevice
@@ -75,6 +76,9 @@ public:
         m_pSAASound = CreateCSAASound();
         m_pSAASound->SetSoundParameters(SAAP_NOFILTER | SAAP_16BIT | SAAP_STEREO);
         m_pSAASound->SetSampleRate(SAMPLE_FREQ);
+        // Use 4x oversampling (2) for quality without killing performance
+        // Default is 6 (64x) which is too slow, 0 has aliasing artifacts
+        m_pSAASound->SetOversample(2);
         static_assert(SAMPLE_BITS == 16 && SAMPLE_CHANNELS == 2, "SAA parameter mismatch");
     }
 
