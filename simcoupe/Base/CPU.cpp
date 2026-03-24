@@ -155,6 +155,18 @@ void Run()
         if (g_fPaused)
             continue;
 
+#ifdef __circle__
+        // Sync with Core 2: wait for previous frame's sound synthesis to finish
+        // before Z80 starts writing new sound data (pSAA->Out, pDAC->Output).
+        // Prevents data abort from concurrent SAA/DAC state access across cores.
+        {
+            extern volatile bool g_sound_frame_done;
+            asm volatile("dmb" ::: "memory");
+            while (!g_sound_frame_done)
+                asm volatile("dmb" ::: "memory");
+        }
+#endif
+
         if (!Debug::IsActive() && !GUI::IsModal())
             ExecuteChunk();
 

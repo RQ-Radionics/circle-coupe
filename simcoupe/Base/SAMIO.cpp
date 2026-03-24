@@ -79,6 +79,7 @@ std::unique_ptr<SIDDevice> pSID;
 #ifdef __circle__
 // Sound synthesis signalling — defined in kernel.cpp
 extern volatile bool g_sound_frame_pending;
+extern volatile bool g_sound_frame_done;
 extern volatile unsigned g_sound_signal_count;
 #endif
 
@@ -845,6 +846,11 @@ void FrameUpdate()
 
 #ifdef __circle__
     if (!Frame::TurboMode()) {
+        // Mark Core 2 busy BEFORE signaling — Core 1 will wait on this
+        // at the top of the next Z80 frame (in CPU.cpp) before calling pSAA->Out()
+        asm volatile("dmb" ::: "memory");
+        g_sound_frame_done = false;
+        asm volatile("dmb" ::: "memory");
         g_sound_frame_pending = true;
         g_sound_signal_count++;
     }
