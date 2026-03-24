@@ -140,11 +140,6 @@ TShutdownMode CKernel::Run()
 {
     m_USBHCI.UpdatePlugAndPlay();
 
-    CUSBKeyboardDevice *pKeyboard = (CUSBKeyboardDevice *)
-        CDeviceNameService::Get()->GetDevice("ukbd1", FALSE);
-    if (pKeyboard)
-        pKeyboard->RegisterKeyStatusHandlerRaw(KeyStatusHandlerRaw, FALSE, nullptr);
-
     // Start PWM audio — device constructed in kernel ctor, queue setup here
     circle_audio_start();
 
@@ -157,6 +152,22 @@ TShutdownMode CKernel::Run()
     {
         m_Scheduler.Yield();
         m_USBHCI.UpdatePlugAndPlay();
+
+        // Check for keyboard (hot-plug support)
+        CUSBKeyboardDevice *pKeyboard = (CUSBKeyboardDevice *)
+            CDeviceNameService::Get()->GetDevice("ukbd1", FALSE);
+        if (pKeyboard)
+        {
+            static bool s_bKeyboardRegistered = false;
+            if (!s_bKeyboardRegistered)
+            {
+                pKeyboard->RegisterKeyStatusHandlerRaw(KeyStatusHandlerRaw, FALSE, nullptr);
+                m_Logger.Write(FromKernel, LogNotice, "Keyboard connected");
+                s_bKeyboardRegistered = true;
+            }
+        }
+        // Note: keyboard removal is handled by Circle's USB stack - the device
+        // will be unregistered from DeviceNameService when disconnected
 
         // Check for newly connected gamepads
         for (unsigned nDevice = 1; nDevice <= MAX_GAMEPADS; nDevice++)
