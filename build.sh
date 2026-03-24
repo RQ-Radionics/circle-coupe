@@ -108,8 +108,9 @@ build_platform() {
 
     # Paso 3: Compilar libs Circle + enlazar kernel
     info "Paso 3/3: Compilando libs Circle y enlazando $KERNEL..."
-    make -C simcoupe RASPPI="$RASPPI" -j"$JOBS" 2>&1 | \
-        grep -E "CLEAN|CPP|AR|LD|COPY|WC|error:" || true
+    # Use -j1 for first build to avoid race between cmake and link
+    make -C simcoupe RASPPI="$RASPPI" -j1 2>&1 | \
+        grep -E "CLEAN|CPP|CC|AR|LD|COPY|WC|error:|warning:|CMAKE" || true
 
     # Verificar resultado
     if [ -f "simcoupe/$KERNEL" ]; then

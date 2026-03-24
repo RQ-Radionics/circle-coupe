@@ -115,7 +115,7 @@ else
 endif
 
 circle-libs:
-	@if [ "$(CIRCLE_CURRENT_CPU)" != "$(CIRCLE_EXPECTED_CPU)" ]; then \
+	@if [ -n "$(CIRCLE_CURRENT_CPU)" ] && [ "$(CIRCLE_CURRENT_CPU)" != "$(CIRCLE_EXPECTED_CPU)" ]; then \
 		echo "  CLEAN Circle libs + local objects (was $(CIRCLE_CURRENT_CPU), need $(CIRCLE_EXPECTED_CPU))"; \
 		$(MAKE) -C $(CIRCLEHOME)/lib          RASPPI=$(RASPPI) clean; \
 		$(MAKE) -C $(CIRCLEHOME)/lib/usb      RASPPI=$(RASPPI) clean; \
@@ -148,8 +148,30 @@ $(SIMCOUPE_LIB): $(CMAKE_SOURCES)
 	fi
 	cmake --build $(CMAKE_BUILD) --parallel $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-# Make the kernel depend on the CMake lib and Circle libs
-$(TARGET).img: $(SIMCOUPE_LIB) circle-libs
+# All CMake-built libraries depend on the main simcoupe lib target
+# (which triggers the full CMake build)
+$(CMAKE_BUILD)/simcoupe/libwhereami.a \
+$(CMAKE_BUILD)/_deps/saasound-build/libSAASound.a \
+$(CMAKE_BUILD)/_deps/fmt-build/libfmt.a \
+$(CMAKE_BUILD)/_deps/resid-build/libresid.a \
+$(CMAKE_BUILD)/_deps/spectrum-build/libspectrum.a: $(SIMCOUPE_LIB)
+	@:
+
+# Make the kernel depend on the CMake lib and object files
+# OBJS must be a hard dependency, circle-libs is order-only (|)
+$(TARGET).img: $(OBJS) $(SIMCOUPE_LIB) | circle-libs
+
+# Circle library files depend on circle-libs target (phony dependency)
+# This tells make: "if any of these files are needed, run circle-libs first"
+$(CIRCLEHOME)/addon/SDCard/libsdcard.a \
+$(CIRCLEHOME)/addon/fatfs/libfatfs.a \
+$(CIRCLEHOME)/lib/libcircle.a \
+$(CIRCLEHOME)/lib/usb/libusb.a \
+$(CIRCLEHOME)/lib/input/libinput.a \
+$(CIRCLEHOME)/lib/sound/libsound.a \
+$(CIRCLEHOME)/lib/sched/libsched.a \
+$(CIRCLEHOME)/lib/fs/libfs.a: circle-libs
+	@:
 
 # ---- posix_stubs.cpp: needs Circle types FIRST to avoid time_t conflict ----
 posix_stubs.o: posix_stubs.cpp
