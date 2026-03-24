@@ -514,6 +514,7 @@ public:
             if (GetOption(atombootrom) && (Changed(drive1) || Changed(drive2)))
                 Memory::UpdateRom();
 
+            Options::Save();
             Destroy();
         }
     }
@@ -565,6 +566,7 @@ public:
                 Frame::Init();
             }
 
+            Options::Save();
             Destroy();
         }
     }
@@ -616,6 +618,7 @@ public:
             SetOption(sid, m_pSID->GetSelected());
             SetOption(dac7c, m_pDAC7C->GetSelected());
 
+            Options::Save();
             Destroy();
         }
     }
@@ -675,6 +678,7 @@ public:
             if (Changed(midi) || Changed(midiindev) || Changed(midioutdev))
                 pMidi->SetDevice(GetOption(midioutdev));
 
+            Options::Save();
             Destroy();
         }
         else
@@ -753,6 +757,7 @@ public:
             SetOption(joytype1, m_pJoyType1->GetSelected());
             SetOption(joytype2, m_pJoyType2->GetSelected());
 
+            Options::Save();
             Destroy();
         }
     }
@@ -1025,6 +1030,7 @@ public:
             SetOption(parallel2, m_pPort2->GetSelected());
             SetOption(flushdelay, m_pFlushDelay->GetSelected());
 
+            Options::Save();
             Destroy();
         }
         else
@@ -1095,6 +1101,7 @@ public:
             SetOption(status, m_pStatus->IsChecked());
             SetOption(profile, m_pProfile->IsChecked());
 
+            Options::Save();
             Destroy();
         }
     }
