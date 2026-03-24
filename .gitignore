@@ -15,3 +15,7 @@ test/
 # Python cache
 __pycache__/
 *.pyc
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
