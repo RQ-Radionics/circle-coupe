@@ -56,6 +56,10 @@ sam_cpu cpu;
 bool g_fBreak, g_fPaused;
 int g_nTurbo;
 
+#ifdef __circle__
+extern volatile bool g_sound_frame_done;  // defined in kernel.cpp
+#endif
+
 constexpr auto max_boot_frames{ 200 };
 int boot_frames;
 
@@ -160,7 +164,6 @@ void Run()
         // before Z80 starts writing new sound data (pSAA->Out, pDAC->Output).
         // Prevents data abort from concurrent SAA/DAC state access across cores.
         {
-            extern volatile bool g_sound_frame_done;
             asm volatile("dmb" ::: "memory");
             while (!g_sound_frame_done)
                 asm volatile("dmb" ::: "memory");

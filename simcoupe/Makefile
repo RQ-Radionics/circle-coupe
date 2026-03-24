@@ -36,7 +36,7 @@ else
 endif
 
 # ---- Object files (Circle entry points only) ----
-OBJS = main.o kernel.o posix_stubs.o fatfs_posix.o ../kernel/syscalls.o circle_fb.o
+OBJS = main.o kernel.o posix_stubs.o fatfs_posix.o syscalls.o circle_fb.o
 
 # ---- CMake build output ----
 SDL3_LIB_DIR = $(CMAKE_BUILD)/src
@@ -125,7 +125,7 @@ circle-libs:
 		$(MAKE) -C $(CIRCLEHOME)/lib/fs       RASPPI=$(RASPPI) clean; \
 		$(MAKE) -C $(CIRCLEHOME)/addon/fatfs  RASPPI=$(RASPPI) clean; \
 		$(MAKE) -C $(CIRCLEHOME)/addon/SDCard RASPPI=$(RASPPI) clean; \
-		rm -f *.o ../kernel/syscalls.o; \
+		rm -f *.o syscalls.o; \
 	fi
 	$(MAKE) -C $(CIRCLEHOME)/lib          RASPPI=$(RASPPI)
 	$(MAKE) -C $(CIRCLEHOME)/lib/usb      RASPPI=$(RASPPI)

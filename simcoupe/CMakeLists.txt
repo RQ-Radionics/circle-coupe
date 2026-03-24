@@ -282,15 +282,13 @@ FetchContent_Declare(
   SOURCE_SUBDIR non-existent-directory )
 FetchContent_MakeAvailable(spectrum)
 # libspectrum bug: internals.h declares 'int' return but definition uses 'libspectrum_error' enum.
-# GCC 15 treats this as a hard error. Patch the header in-tree after fetch.
-if(CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL "14")
-  file(READ "${spectrum_SOURCE_DIR}/internals.h" _spectrum_internals)
-  string(REPLACE
-    "int libspectrum_split_to_48k_pages"
-    "libspectrum_error libspectrum_split_to_48k_pages"
-    _spectrum_internals "${_spectrum_internals}")
-  file(WRITE "${spectrum_SOURCE_DIR}/internals.h" "${_spectrum_internals}")
-endif()
+# Patch the header in-tree after fetch.
+file(READ "${spectrum_SOURCE_DIR}/internals.h" _spectrum_internals)
+string(REPLACE
+  "int libspectrum_split_to_48k_pages"
+  "libspectrum_error libspectrum_split_to_48k_pages"
+  _spectrum_internals "${_spectrum_internals}")
+file(WRITE "${spectrum_SOURCE_DIR}/internals.h" "${_spectrum_internals}")
 add_subdirectory(${spectrum_SOURCE_DIR} ${spectrum_BINARY_DIR} EXCLUDE_FROM_ALL)
 # On bare-metal without zlib: remove zip.c and zlib.c which unconditionally include <zlib.h>
 if(CMAKE_SYSTEM_NAME STREQUAL "Generic")

@@ -47,11 +47,11 @@ set(CIRCLE_BARE_FLAGS
 )
 string(REPLACE ";" " " CIRCLE_BARE_FLAGS "${CIRCLE_BARE_FLAGS}")
 
-set(CMAKE_C_FLAGS_INIT   "${CIRCLE_CPU_FLAGS} -ffreestanding -fno-unwind-tables -fno-asynchronous-unwind-tables -fsigned-char -O3 -g -DAARCH=32 -DRASPPI=3 -DSTDLIB_SUPPORT=1 -D__circle__=500100 -D__VCCOREVER__=0x04000000 -U__unix__ -U__linux__ -DKERNEL_MAX_SIZE=0x800000 -DDEPTH=32 -DNO_PHYSICAL_COUNTER")
+set(CMAKE_C_FLAGS_INIT   "${CIRCLE_CPU_FLAGS} -ffreestanding -fno-unwind-tables -fno-asynchronous-unwind-tables -fsigned-char -O3 -g -DAARCH=32 -DRASPPI=3 -DSTDLIB_SUPPORT=1 -D__circle__=500100 -D__VCCOREVER__=0x04000000 -U__unix__ -U__linux__ -DKERNEL_MAX_SIZE=0x800000 -DDEPTH=32 -DNO_PHYSICAL_COUNTER -DARM_ALLOW_MULTI_CORE")
 # CXX: NO -ffreestanding here — hosted C++ headers required by SimCoupe deps.
 # Targets that need freestanding (SDL3-circle, kernel) add it via target_compile_options.
-set(CMAKE_CXX_FLAGS_INIT "${CIRCLE_CPU_FLAGS} -fno-exceptions -fno-rtti -fno-unwind-tables -fno-asynchronous-unwind-tables -fsigned-char -O3 -g -DAARCH=32 -DRASPPI=3 -DSTDLIB_SUPPORT=1 -D__circle__=500100 -D__VCCOREVER__=0x04000000 -U__unix__ -U__linux__ -DKERNEL_MAX_SIZE=0x800000 -DDEPTH=32 -DNO_PHYSICAL_COUNTER -std=c++17 -Wno-aligned-new")
-set(CMAKE_ASM_FLAGS_INIT "${CIRCLE_CPU_FLAGS} -ffreestanding -O2 -g -DAARCH=32 -DRASPPI=3 -DSTDLIB_SUPPORT=1 -D__circle__=500100 -U__unix__ -U__linux__ -DKERNEL_MAX_SIZE=0x800000 -DDEPTH=32")
+set(CMAKE_CXX_FLAGS_INIT "${CIRCLE_CPU_FLAGS} -fno-exceptions -fno-rtti -fno-unwind-tables -fno-asynchronous-unwind-tables -fsigned-char -O3 -g -DAARCH=32 -DRASPPI=3 -DSTDLIB_SUPPORT=1 -D__circle__=500100 -D__VCCOREVER__=0x04000000 -U__unix__ -U__linux__ -DKERNEL_MAX_SIZE=0x800000 -DDEPTH=32 -DNO_PHYSICAL_COUNTER -DARM_ALLOW_MULTI_CORE -std=c++17 -Wno-aligned-new")
+set(CMAKE_ASM_FLAGS_INIT "${CIRCLE_CPU_FLAGS} -ffreestanding -O2 -g -DAARCH=32 -DRASPPI=3 -DSTDLIB_SUPPORT=1 -D__circle__=500100 -U__unix__ -U__linux__ -DKERNEL_MAX_SIZE=0x800000 -DDEPTH=32 -DARM_ALLOW_MULTI_CORE")
 
 # No dynamic linking on bare-metal
 set(CMAKE_SHARED_LIBRARY_LINK_C_FLAGS   "")

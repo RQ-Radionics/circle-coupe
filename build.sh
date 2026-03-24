@@ -39,6 +39,14 @@ check_deps() {
     ok "Herramientas encontradas: $(arm-none-eabi-gcc --version | head -1 | cut -d'(' -f1)"
 }
 
+# ---- Ensure Circle Config.mk exists ----
+ensure_circle_config() {
+    if [ ! -f "circle/Config.mk" ]; then
+        info "Creando circle/Config.mk con ARM_ALLOW_MULTI_CORE..."
+        echo "DEFINE += -DARM_ALLOW_MULTI_CORE" > circle/Config.mk
+    fi
+}
+
 # ---- Número de CPUs para compilación paralela ----
 JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
@@ -134,6 +142,7 @@ copy_to_sdcard() {
 TARGET="${1:-pi3}"
 
 check_deps
+ensure_circle_config
 
 case "$TARGET" in
     pi2)
