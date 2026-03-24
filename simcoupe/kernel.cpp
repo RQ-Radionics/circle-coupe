@@ -156,18 +156,18 @@ TShutdownMode CKernel::Run()
         // Check for keyboard (hot-plug support)
         CUSBKeyboardDevice *pKeyboard = (CUSBKeyboardDevice *)
             CDeviceNameService::Get()->GetDevice("ukbd1", FALSE);
-        if (pKeyboard)
+        static CUSBKeyboardDevice *s_pLastKeyboard = nullptr;
+        
+        if (pKeyboard != s_pLastKeyboard)
         {
-            static bool s_bKeyboardRegistered = false;
-            if (!s_bKeyboardRegistered)
+            // Keyboard changed (connected or disconnected)
+            if (pKeyboard != nullptr)
             {
                 pKeyboard->RegisterKeyStatusHandlerRaw(KeyStatusHandlerRaw, FALSE, nullptr);
                 m_Logger.Write(FromKernel, LogNotice, "Keyboard connected");
-                s_bKeyboardRegistered = true;
             }
+            s_pLastKeyboard = pKeyboard;
         }
-        // Note: keyboard removal is handled by Circle's USB stack - the device
-        // will be unregistered from DeviceNameService when disconnected
 
         // Check for newly connected gamepads
         for (unsigned nDevice = 1; nDevice <= MAX_GAMEPADS; nDevice++)
