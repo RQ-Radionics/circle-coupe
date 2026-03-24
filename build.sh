@@ -42,8 +42,17 @@ check_deps() {
 # ---- Ensure Circle Config.mk exists ----
 ensure_circle_config() {
     if [ ! -f "circle/Config.mk" ]; then
-        info "Creando circle/Config.mk con ARM_ALLOW_MULTI_CORE..."
-        echo "DEFINE += -DARM_ALLOW_MULTI_CORE" > circle/Config.mk
+        info "Creando circle/Config.mk..."
+        cat > circle/Config.mk << 'EOF'
+# SimCoupe Circle Config.mk
+# Kernel size: 8MB (SimCoupe kernel is ~2MB text+data+bss)
+# Default 2MB is too small, sysinit.cpp will halt if KERNEL_MAX_SIZE < _end
+KERNEL_MAX_SIZE = 0x800000
+DEFINE += -DKERNEL_MAX_SIZE=0x800000
+DEFINE += -DDEPTH=32
+DEFINE += -DARM_ALLOW_MULTI_CORE
+EOF
+        ok "circle/Config.mk creado"
     fi
 }
 
