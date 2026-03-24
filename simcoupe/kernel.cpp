@@ -1,4 +1,4 @@
-// kernel.cpp — SimCoupe Circle kernel (multicore)
+// kernel.cpp — SimCoupe Circle kernel (multicore + USB gamepad)
 //
 // Core 0: Initialize() + Run() — USB, IRQs, scheduler
 // Core 1: Run(1) — SimCoupe Z80 + video
@@ -12,6 +12,7 @@
 
 #include <circle/usb/usbkeyboard.h>
 #include <circle/input/mouse.h>
+#include <circle/util.h>
 #include <string.h>
 
 // Audio configuration: sample rate and chunk size
@@ -33,6 +34,9 @@ namespace Sound { void FrameUpdate(); }
 
 extern "C" void circle_simcoupe_key(unsigned hid_scancode, int pressed,
                                      int mod_shift, int mod_ctrl, int mod_alt);
+
+// Gamepad event callback (defined in Circle/Input.cpp)
+extern "C" void circle_gamepad_event(int joystick, int buttons, int hat_x, int hat_y);
 
 static const char FromKernel[] = "kernel";
 
@@ -98,6 +102,8 @@ CKernel::CKernel()
     m_PWMSound(&m_Interrupt, SAMPLE_RATE, CHUNK_SIZE),
     m_bLaunch(false)
 {
+    for (unsigned i = 0; i < MAX_GAMEPADS; i++)
+        m_pGamePad[i] = nullptr;
     m_ActLED.Blink(5);
 }
 
@@ -151,9 +157,92 @@ TShutdownMode CKernel::Run()
     {
         m_Scheduler.Yield();
         m_USBHCI.UpdatePlugAndPlay();
+
+        // Check for newly connected gamepads
+        for (unsigned nDevice = 1; nDevice <= MAX_GAMEPADS; nDevice++)
+        {
+            if (m_pGamePad[nDevice-1] != nullptr)
+                continue;
+
+            m_pGamePad[nDevice-1] = (CUSBGamePadDevice *)
+                CDeviceNameService::Get()->GetDevice("upad", nDevice, FALSE);
+            if (m_pGamePad[nDevice-1] == nullptr)
+                continue;
+
+            const TGamePadState *pState = m_pGamePad[nDevice-1]->GetInitialState();
+            if (pState)
+            {
+                m_Logger.Write(FromKernel, LogNotice,
+                    "Gamepad %u: %d buttons, %d axes, %d hats",
+                    nDevice, pState->nbuttons, pState->naxes, pState->nhats);
+            }
+
+            m_pGamePad[nDevice-1]->RegisterRemovedHandler(GamePadRemovedHandler, this);
+            m_pGamePad[nDevice-1]->RegisterStatusHandler(GamePadStatusHandler);
+        }
     }
 
     return ShutdownHalt;
+}
+
+// Gamepad state tracking for change detection
+static unsigned s_last_buttons[MAX_GAMEPADS] = {0, 0};
+static int s_last_hat[MAX_GAMEPADS] = {0, 0};
+
+// Gamepad status callback (called from USB IRQ context on core 0)
+// NOTE: Circle passes nDeviceIndex as 0-indexed (m_nDeviceNumber-1)
+void CKernel::GamePadStatusHandler(unsigned nDeviceIndex, const TGamePadState *pState)
+{
+    if (nDeviceIndex >= MAX_GAMEPADS) return;
+    
+    unsigned buttons = pState->buttons;
+    int hat = pState->nhats > 0 ? pState->hats[0] : -1;
+    
+    // Only process if state changed
+    if (buttons == s_last_buttons[nDeviceIndex] && hat == s_last_hat[nDeviceIndex])
+        return;
+    
+    s_last_buttons[nDeviceIndex] = buttons;
+    s_last_hat[nDeviceIndex] = hat;
+    
+    // Convert hat to direction (bmc64-style)
+    // Hat values: 0=centered, 1=N, 2=NE, 3=E, 4=SE, 5=S, 6=SW, 7=W, 8=NW
+    // Values 8-15 (especially 15) are "null position" in USB HID spec
+    int hat_x = 0, hat_y = 0;
+    if (hat >= 1 && hat <= 8) {
+        if (hat == 1 || hat == 2 || hat == 8) hat_y = -1;  // up
+        if (hat == 4 || hat == 5 || hat == 6) hat_y = 1;   // down
+        if (hat == 2 || hat == 3 || hat == 4) hat_x = 1;   // right
+        if (hat == 6 || hat == 7 || hat == 8) hat_x = -1;  // left
+    }
+    // Fallback: use axes for dpad if no hat (many gamepads report dpad as axis 0/1)
+    else if (pState->naxes >= 2) {
+        int centerX = (pState->axes[0].minimum + pState->axes[0].maximum) / 2;
+        int centerY = (pState->axes[1].minimum + pState->axes[1].maximum) / 2;
+        int rangeX = (pState->axes[0].maximum - pState->axes[0].minimum) / 4;
+        int rangeY = (pState->axes[1].maximum - pState->axes[1].minimum) / 4;
+        
+        if (pState->axes[0].value < centerX - rangeX) hat_x = -1;
+        if (pState->axes[0].value > centerX + rangeX) hat_x = 1;
+        if (pState->axes[1].value < centerY - rangeY) hat_y = -1;
+        if (pState->axes[1].value > centerY + rangeY) hat_y = 1;
+    }
+    
+    circle_gamepad_event(nDeviceIndex, (int)buttons, hat_x, hat_y);
+}
+
+void CKernel::GamePadRemovedHandler(CDevice *pDevice, void *pContext)
+{
+    CKernel *pThis = (CKernel *)pContext;
+    for (unsigned i = 0; i < MAX_GAMEPADS; i++)
+    {
+        if (pThis->m_pGamePad[i] == (CUSBGamePadDevice *)pDevice)
+        {
+            pThis->m_Logger.Write(FromKernel, LogDebug, "Gamepad %u removed", i + 1);
+            pThis->m_pGamePad[i] = nullptr;
+            break;
+        }
+    }
 }
 
 // Secondary cores

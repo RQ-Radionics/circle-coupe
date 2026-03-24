@@ -1,11 +1,14 @@
 // Part of SimCoupe - A SAM Coupe emulator
 //
-// Input.cpp: Circle bare-metal keyboard input
+// Input.cpp: Circle bare-metal keyboard + gamepad input
 //
 // USB HID keyboard events arrive via circle_simcoupe_key() called from
 // kernel.cpp's KeyStatusHandlerRaw USB callback (core 0).
+// USB gamepad events arrive via circle_gamepad_event() called from
+// kernel.cpp's GamePadStatusHandler USB callback (core 0).
 // We map USB HID scancodes to SimCoupe HK_ host-key codes and pass them
 // to Keyboard::SetKey() and Actions::Key().
+// Gamepad axes/buttons are mapped to Joystick::SetPosition/SetButtons.
 //
 // Input::Update() is called once per frame from UI::CheckEvents().
 // It drains a small ring buffer of pending events pushed by the USB IRQ.
@@ -14,6 +17,7 @@
 #include "Input.h"
 #include "Actions.h"
 #include "GUI.h"
+#include "Joystick.h"
 #include "Keyboard.h"
 #include "Keyin.h"
 #include "Mouse.h"
@@ -33,6 +37,22 @@ static volatile KeyEvent s_ring[KBD_RING];
 static volatile int s_ring_head = 0;  // written by USB IRQ (core 0)
 static volatile int s_ring_tail = 0;  // read by emulator (core 1)
 
+// ---- Ring buffer for gamepad events (IRQ-safe: one writer, one reader) ---
+
+struct GamepadEvent {
+    int joystick;
+    int buttons;
+    int hat_x, hat_y;
+};
+
+static constexpr int GPAD_RING = 16;
+static volatile GamepadEvent s_gpad_ring[GPAD_RING];
+static volatile int s_gpad_head = 0;
+static volatile int s_gpad_tail = 0;
+
+// ---- Gamepad axis deadzone (0-32767 range, 15% = ~5000) ----
+static constexpr int GAMEPAD_DEADZONE = 5000;
+
 // Called from kernel.cpp USB IRQ handler (core 0)
 extern "C" void circle_simcoupe_key(unsigned hid_scancode, int pressed,
                                      int mod_shift, int mod_ctrl, int mod_alt)
@@ -47,6 +67,20 @@ extern "C" void circle_simcoupe_key(unsigned hid_scancode, int pressed,
     s_ring[s_ring_head].mod_alt   = mod_alt;
     asm volatile("dmb" ::: "memory");
     s_ring_head = next;
+}
+
+// Called from kernel.cpp GamePadStatusHandler (USB IRQ context, core 0)
+extern "C" void circle_gamepad_event(int joystick, int buttons, int hat_x, int hat_y)
+{
+    int next = (s_gpad_head + 1) % GPAD_RING;
+    if (next == s_gpad_tail) return;  // overflow: drop
+
+    s_gpad_ring[s_gpad_head].joystick = joystick;
+    s_gpad_ring[s_gpad_head].buttons  = buttons;
+    s_gpad_ring[s_gpad_head].hat_x    = hat_x;
+    s_gpad_ring[s_gpad_head].hat_y    = hat_y;
+    asm volatile("dmb" ::: "memory");
+    s_gpad_head = next;
 }
 
 // ---- USB HID scancode → SimCoupe HK_ mapping ----------------------------
@@ -133,7 +167,9 @@ static int HidToHk(unsigned sc)
 bool Input::Init()
 {
     s_ring_head = s_ring_tail = 0;
+    s_gpad_head = s_gpad_tail = 0;
     Keyboard::Init();
+    Joystick::Init();
     return true;
 }
 
@@ -144,7 +180,7 @@ void Input::Exit()
 
 void Input::Update()
 {
-    // Drain ring buffer
+    // Drain keyboard ring buffer
     asm volatile("dmb" ::: "memory");
     while (s_ring_tail != s_ring_head)
     {
@@ -185,6 +221,41 @@ void Input::Update()
         }
     }
 
+    // Drain gamepad ring buffer
+    asm volatile("dmb" ::: "memory");
+    while (s_gpad_tail != s_gpad_head)
+    {
+        GamepadEvent ev;
+        ev.joystick = s_gpad_ring[s_gpad_tail].joystick;
+        ev.buttons  = s_gpad_ring[s_gpad_tail].buttons;
+        ev.hat_x    = s_gpad_ring[s_gpad_tail].hat_x;
+        ev.hat_y    = s_gpad_ring[s_gpad_tail].hat_y;
+        asm volatile("dmb" ::: "memory");
+        s_gpad_tail = (s_gpad_tail + 1) % GPAD_RING;
+
+        if (ev.joystick < 0 || ev.joystick >= MAX_JOYSTICKS)
+            continue;
+
+        // Map hat/d-pad to joystick position
+        int pos = HJ_CENTRE;
+        if (ev.hat_x < 0)  pos |= HJ_LEFT;
+        if (ev.hat_x > 0)  pos |= HJ_RIGHT;
+        if (ev.hat_y < 0)  pos |= HJ_UP;
+        if (ev.hat_y > 0)  pos |= HJ_DOWN;
+
+        Joystick::SetPosition(ev.joystick, pos);
+
+        // Map buttons: bit0=A(fire), bit1=B, bit2=X, bit3=Y
+        // Use button A as primary fire, map other buttons to extra fire buttons
+        uint32_t joy_buttons = 0;
+        if (ev.buttons & 0x01) joy_buttons |= 0x01;  // Button A -> Fire 1
+        if (ev.buttons & 0x02) joy_buttons |= 0x02;  // Button B -> Fire 2
+        if (ev.buttons & 0x04) joy_buttons |= 0x04;  // Button X -> Fire 3
+        if (ev.buttons & 0x08) joy_buttons |= 0x08;  // Button Y -> Fire 4
+
+        Joystick::SetButtons(ev.joystick, joy_buttons);
+    }
+
     Keyboard::Update();
 
     // CapsLock / NumLock are toggle keys — release every frame
@@ -195,6 +266,7 @@ void Input::Update()
 void Input::Purge()
 {
     s_ring_head = s_ring_tail = 0;
+    s_gpad_head = s_gpad_tail = 0;
     Keyboard::Purge();
 }
 

@@ -95,8 +95,8 @@ struct Config
 
     std::string joydev1;                // Joystick 1 device
     std::string joydev2;                // Joystick 2 device number
-    int joytype1 = 1;                   // Joystick 1 mapping (0=None, 1=Joystick1, 2=Joystick2, 3=Kempston)
-    int joytype2 = 2;                   // Joystick 2 mapping
+    int joytype1 = 3;                   // Joystick 1 mapping: 0=None, 1=Sinclair1, 2=Sinclair2, 3=Kempston
+    int joytype2 = 0;                   // Joystick 2 mapping
     int deadzone1 = 20;                 // Joystick 1 deadzone
     int deadzone2 = 20;                 // Joystick 2 deadzone
 

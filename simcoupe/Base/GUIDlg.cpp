@@ -698,7 +698,7 @@ class InputOptions final : public Dialog
 {
 public:
     InputOptions(Window* pParent_)
-        : Dialog(pParent_, 300, 190, "Input Settings")
+        : Dialog(pParent_, 300, 260, "Input Settings")
     {
         new IconControl(this, 10, 10, &sKeyboardIcon);
         new FrameControl(this, 50, 17, 238, 89);
@@ -713,11 +713,16 @@ public:
 #else
         m_pAltGrForEdit = new CheckBox(this, 63, 85, "Use Alt-Gr key for SAM Edit");
 #endif
-        new IconControl(this, 10, 121, &sMouseIcon);
-        new FrameControl(this, 50, 123, 238, 37);
-        new TextControl(this, 60, 119, "Mouse", YELLOW_8, BLUE_2);
 
-        m_pMouse = new CheckBox(this, 63, 136, "Enable SAM mouse interface");
+        new IconControl(this, 10, 121, &sJoystickIcon);
+        new FrameControl(this, 50, 123, 238, 55);
+        new TextControl(this, 60, 119, "Joystick", YELLOW_8, BLUE_2);
+
+        new TextControl(this, 63, 144, "Joystick 1:");
+        m_pJoyType1 = new ComboBox(this, 145, 141, "None|Sinclair 1|Sinclair 2|Kempston",115);
+
+        new TextControl(this, 63, 166, "Joystick 2:");
+        m_pJoyType2 = new ComboBox(this, 145, 163, "None|Sinclair 1|Sinclair 2|Kempston", 115);
 
         m_pOK = new TextButton(this, m_nWidth - 117, m_nHeight - 21, "OK", 50);
         m_pCancel = new TextButton(this, m_nWidth - 62, m_nHeight - 21, "Cancel", 50);
@@ -726,10 +731,11 @@ public:
         m_pKeyMapping->Select(GetOption(keymapping));
         m_pAltForCntrl->SetChecked(GetOption(altforcntrl));
         m_pAltGrForEdit->SetChecked(GetOption(altgrforedit));
-        m_pMouse->SetChecked(GetOption(mouse));
+        m_pJoyType1->Select(GetOption(joytype1));
+        m_pJoyType2->Select(GetOption(joytype2));
 
         // Update the state of the controls to reflect the current settings
-        OnNotify(m_pMouse, 0);
+        OnNotify(m_pJoyType1, 0);
     }
     InputOptions(const InputOptions&) = delete;
     void operator= (const InputOptions&) = delete;
@@ -744,7 +750,8 @@ public:
             SetOption(keymapping, m_pKeyMapping->GetSelected());
             SetOption(altforcntrl, m_pAltForCntrl->IsChecked());
             SetOption(altgrforedit, m_pAltGrForEdit->IsChecked());
-            SetOption(mouse, m_pMouse->IsChecked());
+            SetOption(joytype1, m_pJoyType1->GetSelected());
+            SetOption(joytype2, m_pJoyType2->GetSelected());
 
             Destroy();
         }
@@ -754,7 +761,8 @@ protected:
     ComboBox* m_pKeyMapping = nullptr;
     CheckBox* m_pAltForCntrl = nullptr;
     CheckBox* m_pAltGrForEdit = nullptr;
-    CheckBox* m_pMouse = nullptr;
+    ComboBox* m_pJoyType1 = nullptr;
+    ComboBox* m_pJoyType2 = nullptr;
     TextButton* m_pOK = nullptr;
     TextButton* m_pCancel = nullptr;
 };
