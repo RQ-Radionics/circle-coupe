@@ -6,9 +6,11 @@
 #include "Options.h"
 
 #include <circle/sound/pwmsoundbasedevice.h>
+#include <circle/sound/hdmisoundbasedevice.h>
 #include <circle/interrupt.h>
 
 static CPWMSoundBaseDevice * volatile s_pSound     = nullptr;
+static CHDMISoundBaseDevice * volatile s_pSoundHDMI = nullptr;
 static CInterruptSystem    *s_pInterrupt = nullptr;
 static volatile bool        s_active     = false;
 
@@ -42,22 +44,54 @@ extern "C" void circle_audio_start(void)
 
     s_pSound->SetWriteFormat(SoundFormatSigned16, 2);
 
+    // Try to initialize HDMI audio device as secondary output
+    s_pSoundHDMI = new CHDMISoundBaseDevice(s_pInterrupt, SAMPLE_FREQ, 2048);
+    if (s_pSoundHDMI) {
+        if (s_pSoundHDMI->AllocateQueue(1000)) {
+            s_pSoundHDMI->SetWriteFormat(SoundFormatSigned16, 2);
+            g_audio_status = "hdmi-ready";
+        } else {
+            delete s_pSoundHDMI;
+            s_pSoundHDMI = nullptr;
+        }
+    }
+
     // Fill queue with silence before Start (like sample 34)
     unsigned nFrames = s_pSound->GetQueueSizeFrames();
     s16 *sil = new s16[nFrames * 2];
     for (unsigned i = 0; i < nFrames * 2; i++) sil[i] = 0;
     s_pSound->Write(sil, nFrames * 2 * sizeof(s16));
+
+    // Also fill HDMI queue if available
+    if (s_pSoundHDMI) {
+        unsigned nHDMIFrames = s_pSoundHDMI->GetQueueSizeFrames();
+        s16 *silHDMI = new s16[nHDMIFrames * 2];
+        for (unsigned i = 0; i < nHDMIFrames * 2; i++) silHDMI[i] = 0;
+        s_pSoundHDMI->Write(silHDMI, nHDMIFrames * 2 * sizeof(s16));
+        delete[] silHDMI;
+    }
+
     delete[] sil;
 
     g_audio_status = "starting";
     if (!s_pSound->Start()) {
         g_audio_status = "start-fail";
         s_pSound = nullptr;
+        if (s_pSoundHDMI) {
+            delete s_pSoundHDMI;
+            s_pSoundHDMI = nullptr;
+        }
         return;
     }
 
+    // Start HDMI device if available
+    if (s_pSoundHDMI && !s_pSoundHDMI->Start()) {
+        delete s_pSoundHDMI;
+        s_pSoundHDMI = nullptr;
+    }
+
     // s_active set from Core 2 via circle_audio_activate() — cross-core cache issue
-    g_audio_status = "running";
+    g_audio_status = s_pSoundHDMI ? "dual-running" : "running";
 }
 
 // Also keep old entry point as no-op
@@ -77,7 +111,11 @@ bool Audio::Init()
 
 void Audio::Exit()
 {
-    // Don't delete — kernel owns the device
+    // Don't delete PWM device — kernel owns it
+    if (s_pSoundHDMI) {
+        delete s_pSoundHDMI;
+        s_pSoundHDMI = nullptr;
+    }
     s_active = false;
 }
 
@@ -92,18 +130,27 @@ float Audio::AddData(uint8_t *pData, int len_bytes)
     s_add_called++;
     s_add_last_len = len_bytes;
 
-    // Get device pointer with memory barrier to ensure cross-core visibility
+    // Get device pointers with memory barrier to ensure cross-core visibility
     asm volatile("dmb" ::: "memory");
     CPWMSoundBaseDevice *dev = s_pSound;
+    CHDMISoundBaseDevice *devHDMI = s_pSoundHDMI;
     bool active = s_active;
 
     // Skip s_active check — just verify we have data and a device
     if (!pData)        { s_add_reject_reason = 2; return 0.5f; }
     if (len_bytes <= 0){ s_add_reject_reason = 3; return 0.5f; }
     if (!dev)          { s_add_reject_reason = 4; return 0.5f; }
+
+    // Send to primary PWM device
     int written = dev->Write(pData, len_bytes);
     s_add_count++;
     s_add_bytes += written;
+
+    // Send to HDMI device if available (don't count this in metrics)
+    if (devHDMI) {
+        devHDMI->Write(pData, len_bytes);
+    }
+
     return 0.5f;
 }
 
