@@ -16,9 +16,32 @@ This port is based on [SimCoupe by Simon Owen](https://github.com/simonowen/simc
   - Core 1: Z80 CPU emulation and video
   - Core 2: Audio synthesis
 - **USB input support** — Keyboards and gamepads (up to 2)
-- **PWM audio output** — 44.1kHz via headphone jack
+- **Dual audio output** — PWM via headphone jack + HDMI (when available)
 - **FAT filesystem** — Load ROMs and disk images from SD card
 - **Framebuffer video** — Direct hardware rendering at 800×600
+
+## Audio System
+
+SimCoupe Circle features automatic dual audio output:
+
+### Primary Output (PWM)
+- **Device**: `CPWMSoundBaseDevice` via Circle framework
+- **Output**: 3.5mm headphone jack
+- **Sample Rate**: 22.05kHz (44.1kHz for non-Circle builds)
+- **Purpose**: Primary audio device, maintains core synchronization
+
+### Secondary Output (HDMI)
+- **Device**: `CHDMISoundBaseDevice` (automatic detection)
+- **Output**: HDMI audio (when monitor supports it)
+- **Sample Rate**: 48kHz
+- **Purpose**: Additional audio output, no configuration required
+
+### Implementation Details
+- **Automatic Detection**: HDMI audio initializes automatically if available
+- **Simultaneous Output**: Same audio data sent to both devices
+- **Fallback**: PWM-only operation if HDMI fails or unavailable
+- **Synchronization**: PWM remains primary device for timing control
+- **Buffer Size**: 1000ms queue for smooth playback
 
 ## Supported Hardware
 
@@ -102,17 +125,17 @@ make -C circle/boot firmware
 │  ───────         │  ───────         │  ───────          │
 │  USB HCI         │  Z80 Emulation   │  Audio Synthesis  │
 │  Scheduler       │  Video Update    │  Sound::Frame()  │
-│  Keyboard/Gamepad│                  │                   │
+│  Keyboard/Gamepad│                  │  Dual Audio Out  │
 ├─────────────────────────────────────────────────────────┤
 │                    Circle Framework                      │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐    │
-│  │ CPWMSound│ │CEMMCDev. │ │CUSBHCIDev│ │FatFs     │    │
-│  │(Audio)   │ │(SD Card) │ │(USB)      │ │(FAT32)   │    │
+│  │ CPWMSound│ │CHDMISound│ │CEMMCDev. │ │CUSBHCIDev│    │
+│  │(PWM)     │ │(HDMI)    │ │(SD Card) │ │(USB)      │    │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────┘    │
 ├─────────────────────────────────────────────────────────┤
 │                    Hardware                              │
-│  PWM Audio     │  SD Card Slot  │  USB Ports            │
-│  (Headphone)   │  (FAT32)       │  (Keyboard/Gamepad)  │
+│  PWM Audio     │  HDMI Audio    │  SD Card Slot  │  USB │
+│  (Headphone)   │  (Monitor)     │  (FAT32)       │  (KB)│
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -120,20 +143,40 @@ make -C circle/boot firmware
 
 ```
 circle-coupe/
-├── circle/              # Circle framework (submodule)
+├── .beads/               # Issue tracking (beads system)
+├── circle/               # Circle framework (submodule)
+│   ├── addon/            # Circle extensions (LVGL, sound, etc.)
+│   ├── include/          # Circle headers
+│   ├── lib/              # Circle libraries
+│   ├── sample/           # Example applications
+│   └── ...
 ├── simcoupe/             # SimCoupe source (submodule)
 │   ├── Base/             # Core emulator (CPU, video, sound)
+│   │   ├── Actions.cpp   # Input handling & OSD management
+│   │   ├── GUI.*         # On-screen display system
+│   │   ├── Sound.*       # Audio synthesis (SAA, DAC, SID)
+│   │   └── Video.*       # Video rendering
 │   ├── Circle/           # Circle-specific backends
+│   │   ├── Audio.cpp     # Dual PWM+HDMI audio output
+│   │   ├── Input.cpp     # USB keyboard/gamepad input
+│   │   ├── UI.cpp        # User interface
+│   │   └── Video.cpp     # Framebuffer video
 │   ├── SDL/              # SDL platform layer (adapted)
+│   ├── Win32/            # Windows-specific code (unused)
+│   ├── Extern/           # External libraries (resid, fmt)
 │   └── kernel.cpp        # Circle kernel entry point
 ├── src/                  # Support code
 │   ├── video/circle/     # Circle framebuffer driver
 │   ├── fatfs_posix.cpp   # POSIX file I/O via FatFs
 │   └── ...
+├── build/                # Build artifacts (Pi 3B)
+├── build-pi2/            # Build artifacts (Pi 2B)
+├── scripts/              # Build and utility scripts
 ├── SDL3/                 # SDL3 library (subset used)
-├── build.sh              # Build script
+├── cmake/                # CMake toolchain files
+├── build.sh              # Main build script
 ├── circle-config.mk      # Circle configuration
-└── cmake/                # CMake toolchain files
+└── README.md             # This file
 ```
 
 ## Configuration Options
@@ -155,6 +198,24 @@ The `circle-config.mk` file controls build settings:
 - Framebuffer depth: 32-bit XRGB8888
 - Sound buffer: 1024 samples @ 44.1kHz (~23ms latency)
 
+### Audio Implementation
+
+```cpp
+// Dual audio device initialization (Circle/Audio.cpp)
+static CPWMSoundBaseDevice *s_pSound = nullptr;      // Primary PWM
+static CHDMISoundBaseDevice *s_pSoundHDMI = nullptr; // Secondary HDMI
+
+// Automatic HDMI detection and initialization
+s_pSoundHDMI = new CHDMISoundBaseDevice(s_pInterrupt, SAMPLE_FREQ, 2048);
+if (s_pSoundHDMI && s_pSoundHDMI->AllocateQueue(1000)) {
+    // HDMI available - dual output enabled
+    g_audio_status = "dual-running";
+}
+
+// Simultaneous audio output
+Audio::AddData(pData, len_bytes); // Sends to both devices
+```
+
 ### Multicore Synchronization
 
 ```cpp
@@ -171,12 +232,20 @@ The `CKernel` class inherits from `CMultiCoreSupport`:
 
 ```cpp
 class CKernel : public CMultiCoreSupport {
-    CUSBHCIDevice  m_USBHCI;      // USB host controller
-    CEMMCDevice    m_EMMC;        // SD card interface
-    CPWMSoundBaseDevice m_PWMSound; // PWM audio output
+    CUSBHCIDevice  m_USBHCI;          // USB host controller
+    CEMMCDevice    m_EMMC;            // SD card interface
+    CPWMSoundBaseDevice m_PWMSound;   // PWM audio output (primary)
+    CHDMISoundBaseDevice m_HDMISound; // HDMI audio output (secondary)
     // ...
 };
 ```
+
+### Audio Device Management
+
+- **Primary Device (PWM)**: Always available, controls timing/synchronization
+- **Secondary Device (HDMI)**: Auto-detected, optional, mirrors PWM output
+- **Fallback Strategy**: PWM-only operation if HDMI initialization fails
+- **Buffer Synchronization**: Both devices receive identical audio data simultaneously
 
 ## Credits
 
