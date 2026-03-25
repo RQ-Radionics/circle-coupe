@@ -98,8 +98,12 @@ sdcard/
 ├── config.txt        # Boot configuration
 ├── kernel.img        # Use kernel7.img for Pi2, kernel8-32.img for Pi3
 └── simcoupe/
-    ├── samcoupe.rom  # SAM Coupé ROM (required)
-    └── *.dsk         # Disk images (optional)
+    ├── samcoupe.rom     # SAM Coupé ROM (required)
+    ├── samdos2.sbt      # SAM DOS 2.2 system disk (recommended)
+    ├── atom.rom         # Atom ROM (optional)
+    ├── atomlite.rom     # Atom Lite ROM (optional)
+    ├── sp0256-al2.bin   # SP0256-AL2 speech synthesizer (optional)
+    └── *.dsk            # Additional disk images (optional)
 ```
 
 ### Generating Firmware Files
@@ -107,6 +111,17 @@ sdcard/
 ```bash
 make -C circle/boot firmware
 ```
+
+### Optional ROMs and Resources
+
+The `simcoupe/Resource/` directory contains additional files that can be copied to your SD card:
+
+- **`samdos2.sbt`** - SAM DOS 2.2 system disk. Provides disk operating system functionality
+- **`atom.rom`** - Atom hard disk interface ROM for IDE hard disk emulation
+- **`atomlite.rom`** - Atom Lite ROM for simplified Atom compatibility
+- **`sp0256-al2.bin`** - SP0256-AL2 speech synthesizer ROM for voice synthesis
+
+These files are automatically detected and loaded if present in the `simcoupe/` directory on the SD card.
 
 ## Controls
 
@@ -152,18 +167,11 @@ circle-coupe/
 │   └── ...
 ├── simcoupe/             # SimCoupe source (submodule)
 │   ├── Base/             # Core emulator (CPU, video, sound)
-│   │   ├── Actions.cpp   # Input handling & OSD management
-│   │   ├── GUI.*         # On-screen display system
-│   │   ├── Sound.*       # Audio synthesis (SAA, DAC, SID)
-│   │   └── Video.*       # Video rendering
 │   ├── Circle/           # Circle-specific backends
-│   │   ├── Audio.cpp     # Dual PWM+HDMI audio output
-│   │   ├── Input.cpp     # USB keyboard/gamepad input
-│   │   ├── UI.cpp        # User interface
-│   │   └── Video.cpp     # Framebuffer video
 │   ├── SDL/              # SDL platform layer (adapted)
 │   ├── Win32/            # Windows-specific code (unused)
 │   ├── Extern/           # External libraries (resid, fmt)
+│   ├── Resource/         # ROMs and system resources
 │   └── kernel.cpp        # Circle kernel entry point
 ├── src/                  # Support code
 │   ├── video/circle/     # Circle framebuffer driver
