@@ -45,7 +45,7 @@ extern "C" void circle_audio_start(void)
     s_pSound->SetWriteFormat(SoundFormatSigned16, 2);
 
     // Try to initialize HDMI audio device as secondary output
-    s_pSoundHDMI = new CHDMISoundBaseDevice(s_pInterrupt, SAMPLE_FREQ, 2048);
+    s_pSoundHDMI = new CHDMISoundBaseDevice(s_pInterrupt, SAMPLE_FREQ, 3840);
     if (s_pSoundHDMI) {
         if (s_pSoundHDMI->AllocateQueue(1000)) {
             s_pSoundHDMI->SetWriteFormat(SoundFormatSigned16, 2);
@@ -113,6 +113,7 @@ void Audio::Exit()
 {
     // Don't delete PWM device — kernel owns it
     if (s_pSoundHDMI) {
+        s_pSoundHDMI->Cancel();  // Must stop before destruction
         delete s_pSoundHDMI;
         s_pSoundHDMI = nullptr;
     }
