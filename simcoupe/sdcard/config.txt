@@ -40,10 +40,10 @@ screen_width=800
 screen_height=600
 # Disable Bluetooth to free PL011 UART for serial debug on GPIO 14/15
 dtoverlay=disable-bt
-# Force HDMI audio
-hdmi_drive=2
-hdmi_force_edid_audio=1
-sounddev=sndhdmi
+# Audio configuration - PWM works on all setups, HDMI requires compatible monitor
+# sounddev=sndpwm          # PWM audio (headphone jack) - default, always works
+# sounddev=sndhdmi         # HDMI audio (requires HDMI monitor with audio support)
+sounddev=sndpwm
 
 # ---- Back to all models ----
 [all]
