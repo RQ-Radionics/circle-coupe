@@ -286,26 +286,28 @@ SimCoupe Circle supports dual audio output, but the firmware must be configured 
 ### PWM Audio (Default)
 - **Device**: Headphone jack (3.5mm)
 - **Configuration**: `sounddev=sndpwm` (default for all Pi models)
-- **Reliability**: Works on all Raspberry Pi models and setups
+- **Models**: Pi 2B, 3B, 4B (Pi 400 lacks physical jack)
+- **Reliability**: Works on all Raspberry Pi models with audio jack
 
-### HDMI Audio (Pi 4/400)
+### HDMI Audio
 - **Device**: HDMI output (requires audio-capable monitor)
-- **Configuration**: `sounddev=sndhdmi` in `config.txt` [pi4] section
-- **Requirements**: HDMI monitor with audio support, Pi 4 or 400
+- **Configuration**: `sounddev=sndhdmi` in respective `[pi*]` section
+- **Models**: All Pi models (Pi 2B/3B/4B/400)
+- **Requirements**: HDMI monitor with audio support
 
 ### Configuration in config.txt
 
-For Raspberry Pi 4/400, modify `simcoupe/sdcard/config.txt`:
+Modify `simcoupe/sdcard/config.txt` in the appropriate section:
 
 ```ini
-[pi4]
+[pi2]  # or [pi3], [pi4]
 # Audio configuration - PWM works on all setups, HDMI requires compatible monitor
 # sounddev=sndpwm          # PWM audio (headphone jack) - default, always works
 # sounddev=sndhdmi         # HDMI audio (requires HDMI monitor with audio support)
 sounddev=sndpwm
 ```
 
-Uncomment `sounddev=sndhdmi` to enable HDMI audio output.
+**Note**: Raspberry Pi 400 lacks a physical 3.5mm audio jack, so only HDMI audio is available for this model.
 
 ## Credits
 
