@@ -279,6 +279,34 @@ class CKernel : public CMultiCoreSupport {
 - **Fallback Strategy**: PWM-only operation if HDMI initialization fails
 - **Buffer Synchronization**: Both devices receive identical audio data simultaneously
 
+## Audio Configuration
+
+SimCoupe Circle supports dual audio output, but the firmware must be configured correctly:
+
+### PWM Audio (Default)
+- **Device**: Headphone jack (3.5mm)
+- **Configuration**: `sounddev=sndpwm` (default for all Pi models)
+- **Reliability**: Works on all Raspberry Pi models and setups
+
+### HDMI Audio (Pi 4/400)
+- **Device**: HDMI output (requires audio-capable monitor)
+- **Configuration**: `sounddev=sndhdmi` in `config.txt` [pi4] section
+- **Requirements**: HDMI monitor with audio support, Pi 4 or 400
+
+### Configuration in config.txt
+
+For Raspberry Pi 4/400, modify `simcoupe/sdcard/config.txt`:
+
+```ini
+[pi4]
+# Audio configuration - PWM works on all setups, HDMI requires compatible monitor
+# sounddev=sndpwm          # PWM audio (headphone jack) - default, always works
+# sounddev=sndhdmi         # HDMI audio (requires HDMI monitor with audio support)
+sounddev=sndpwm
+```
+
+Uncomment `sounddev=sndhdmi` to enable HDMI audio output.
+
 ## Credits
 
 ### SimCoupe Original
