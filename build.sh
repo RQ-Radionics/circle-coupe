@@ -200,6 +200,116 @@ copy_to_sdcard() {
     fi
 }
 
+# ---- Create release ZIP with all platforms ----
+do_release() {
+    local VERSION=$(date +%Y%m%d)
+    local RELEASE_DIR="release/circle-coupe-${VERSION}"
+    local ZIP_FILE="release/circle-coupe-${VERSION}.zip"
+    
+    info "Compilando todos los kernels..."
+    
+    # Build all platforms
+    build_platform 3
+    build_platform 2
+    build_platform 4
+    
+    info "Creando paquete de release..."
+    
+    # Clean release directory
+    rm -rf "$RELEASE_DIR"
+    mkdir -p "$RELEASE_DIR/simcoupe"
+    
+    # ---- Kernels (all in root, user renames as needed) ----
+    cp -f simcoupe/kernel7.img "$RELEASE_DIR/"
+    cp -f simcoupe/kernel8-32.img "$RELEASE_DIR/"
+    cp -f simcoupe/kernel7l.img "$RELEASE_DIR/"
+    
+    # ---- Firmware (all in root - Pi auto-selects correct one) ----
+    # Pi 2B/3B firmware
+    cp -f circle/boot/bootcode.bin "$RELEASE_DIR/"
+    cp -f circle/boot/start.elf "$RELEASE_DIR/"
+    cp -f circle/boot/fixup.dat "$RELEASE_DIR/"
+    # Pi 4B/400 firmware
+    cp -f circle/boot/start4.elf "$RELEASE_DIR/"
+    cp -f circle/boot/fixup4.dat "$RELEASE_DIR/"
+    cp -f circle/boot/armstub7-rpi4.bin "$RELEASE_DIR/"
+    cp -f circle/boot/bcm2711-rpi-4-b.dtb "$RELEASE_DIR/"
+    cp -f circle/boot/bcm2711-rpi-400.dtb "$RELEASE_DIR/"
+    
+    # ---- Config (in root) ----
+    cp -f simcoupe/sdcard/config.txt "$RELEASE_DIR/"
+    
+    # ---- SimCoupe assets (simcoupe/ folder) ----
+    cp -f simcoupe/Resource/* "$RELEASE_DIR/simcoupe/"
+    
+    # ---- Create README ----
+    cat > "$RELEASE_DIR/README.txt" << 'EOFREADME'
+circle-coupe: SimCoupe SAM Coupe Emulator for Raspberry Pi
+===========================================================
+
+Instalacion (copiar TODO a la raiz de la SD FAT32):
+
+  bootcode.bin        - RPi firmware (todas las Pi)
+  start.elf           - Pi 2B/3B firmware
+  start4.elf          - Pi 4B/400 firmware
+  fixup.dat           - Pi 2B/3B fixup
+  fixup4.dat          - Pi 4B/400 fixup
+  armstub7-rpi4.bin   - Pi 4B/400 armstub
+  *.dtb               - Pi 4B/400 device trees
+  
+  config.txt          - Configuracion de boot
+  
+  kernel7.img         - Kernel para Pi 2B
+  kernel8-32.img      - Kernel para Pi 3B
+  kernel7l.img        - Kernel para Pi 4B/400
+  
+  simcoupe/           - Assets del emulador
+    samcoupe.rom      - ROM SAM Coupe (required)
+    atom.rom          - ROM Atom HDD interface
+    atomlite.rom      - ROM Atom Lite
+    *.map/*.sbt       - Debug symbols
+    sp0256-al2.bin    - Speech synthesizer
+    SimCoupe.bmp      - Splash image
+
+NOTA: Los kernels tienen nombres distintos. Tu Pi usara el correcto
+      automaticamente. Solo necesitas renombrar si quieres
+      sobrescribir el kernel por defecto:
+      
+      Pi 2B:  renombra kernel7.img     a kernel.img
+      Pi 3B:  renombra kernel8-32.img a kernel.img  
+      Pi 4B:  renombra kernel7l.img    a kernel.img
+
+Controles:
+  F1       - Insertar disco
+  F10      - Menu de opciones
+  F12      - Reset
+  Ctrl-F12 - Salir
+  Numpad-9 - Boot desde drive 1
+
+Debug serie: 115200 baud, GPIO 14 (TX) / GPIO 15 (RX)
+EOFREADME
+
+    # ---- Create ZIP ----
+    mkdir -p release
+    cd release
+    rm -f "circle-coupe-${VERSION}.zip"
+    zip -r "circle-coupe-${VERSION}.zip" "circle-coupe-${VERSION}"
+    cd ..
+    
+    local ZIP_SIZE=$(ls -lh "$ZIP_FILE" | awk '{print $5}')
+    
+    ok "Release creado: $ZIP_FILE ($ZIP_SIZE)"
+    echo ""
+    echo "Contenido del ZIP:"
+    echo "  kernel7.img, kernel8-32.img, kernel7l.img  (kernels)"
+    echo "  bootcode.bin, start.elf, start4.elf, etc.   (firmware)"
+    echo "  config.txt                                  (config)"
+    echo "  simcoupe/                                   (ROMs + assets)"
+    echo ""
+    echo "Para instalar:"
+    echo "  unzip $ZIP_FILE -d /Volumes/<sd>/"
+}
+
 # ---- Main ----
 TARGET="${1:-pi3}"
 
@@ -240,18 +350,22 @@ case "$TARGET" in
         echo "   circle/boot/fixup4.dat      (Pi 4B/400)"
         echo "   circle/boot/armstub7-rpi4.bin (Pi 4B/400)"
         ;;
+    release)
+        do_release
+        ;;
     clean)
         do_clean
         ;;
     *)
-        echo "Uso: $0 [pi2|pi3|pi4|p400|all|clean]"
+        echo "Uso: $0 [pi2|pi3|pi4|p400|all|release|clean]"
         echo ""
-        echo "  pi2    → kernel7.img      (Raspberry Pi 2B, Cortex-A7)"
-        echo "  pi3    → kernel8-32.img   (Raspberry Pi 3B, Cortex-A53)  [default]"
-        echo "  pi4    → kernel7l.img     (Raspberry Pi 4B, Cortex-A72)"
-        echo "  p400   → kernel7l.img     (Raspberry Pi 400, Cortex-A72)"
-        echo "  all    → todos los kernels"
-        echo "  clean  → limpia todo para empezar desde cero"
+        echo "  pi2     → kernel7.img      (Raspberry Pi 2B, Cortex-A7)"
+        echo "  pi3     → kernel8-32.img   (Raspberry Pi 3B, Cortex-A53)  [default]"
+        echo "  pi4     → kernel7l.img     (Raspberry Pi 4B, Cortex-A72)"
+        echo "  p400    → kernel7l.img     (Raspberry Pi 400, Cortex-A72)"
+        echo "  all     → compila todos los kernels"
+        echo "  release → crea ZIP con todo listo para SD (kernels + firmware + assets)"
+        echo "  clean   → limpia todo para empezar desde cero"
         exit 1
         ;;
 esac

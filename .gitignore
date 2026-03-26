@@ -3,6 +3,9 @@ build/
 build-pi2/
 build-pi4/
 
+# Release packages
+release/
+
 # Circle kernel build artefacts
 kernel/*.o
 kernel/*.d
