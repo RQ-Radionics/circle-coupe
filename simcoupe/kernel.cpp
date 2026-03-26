@@ -199,6 +199,8 @@ TShutdownMode CKernel::Run()
 // Gamepad state tracking for change detection
 static unsigned s_last_buttons[MAX_GAMEPADS] = {0, 0};
 static int s_last_hat[MAX_GAMEPADS] = {0, 0};
+static int s_last_axis_x[MAX_GAMEPADS] = {0, 0};
+static int s_last_axis_y[MAX_GAMEPADS] = {0, 0};
 
 // Gamepad status callback (called from USB IRQ context on core 0)
 // NOTE: Circle passes nDeviceIndex as 0-indexed (m_nDeviceNumber-1)
@@ -208,13 +210,6 @@ void CKernel::GamePadStatusHandler(unsigned nDeviceIndex, const TGamePadState *p
     
     unsigned buttons = pState->buttons;
     int hat = pState->nhats > 0 ? pState->hats[0] : -1;
-    
-    // Only process if state changed
-    if (buttons == s_last_buttons[nDeviceIndex] && hat == s_last_hat[nDeviceIndex])
-        return;
-    
-    s_last_buttons[nDeviceIndex] = buttons;
-    s_last_hat[nDeviceIndex] = hat;
     
     // Convert hat to direction (bmc64-style)
     // Hat values: 0=centered, 1=N, 2=NE, 3=E, 4=SE, 5=S, 6=SW, 7=W, 8=NW
@@ -238,6 +233,18 @@ void CKernel::GamePadStatusHandler(unsigned nDeviceIndex, const TGamePadState *p
         if (pState->axes[1].value < centerY - rangeY) hat_y = -1;
         if (pState->axes[1].value > centerY + rangeY) hat_y = 1;
     }
+    
+    // Only process if state changed (buttons, or hat, or axis-derived direction)
+    if (buttons == s_last_buttons[nDeviceIndex] && 
+        hat == s_last_hat[nDeviceIndex] &&
+        hat_x == s_last_axis_x[nDeviceIndex] &&
+        hat_y == s_last_axis_y[nDeviceIndex])
+        return;
+    
+    s_last_buttons[nDeviceIndex] = buttons;
+    s_last_hat[nDeviceIndex] = hat;
+    s_last_axis_x[nDeviceIndex] = hat_x;
+    s_last_axis_y[nDeviceIndex] = hat_y;
     
     circle_gamepad_event(nDeviceIndex, (int)buttons, hat_x, hat_y);
 }

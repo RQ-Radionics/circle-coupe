@@ -129,25 +129,25 @@ public:
             s_xtab_sw = src_w;
         }
 
-        // Clear borders once
-        static bool s_borders_cleared = false;
-        if (!s_borders_cleared) {
-            memset(fbuf, 0, fb_h * pitch);
-            s_borders_cleared = true;
-        }
-
         // 8-bit blit with dirty-line detection.
         // Only write lines whose source changed since last frame.
         // This dramatically reduces uncached GPU writes for static screens.
-        static uint8_t s_prev_lines[512][544];  // max src_h × src_w
+        // Buffer sized for maximum "full active" mode: 640 pixels wide, 576 lines (GUI doubles height)
+        static uint8_t s_prev_lines[640][640];  // max src_h × src_w
+        static int s_prev_src_w = 0;
         static int s_prev_src_h = 0;
+        
+        // Clear borders when dimensions change (e.g., switching view mode or GUI on/off)
+        // This prevents stale data from larger views appearing in smaller view borders
+        if (src_w != s_prev_src_w || src_h != s_prev_src_h) {
+            memset(fbuf, 0, fb_h * pitch);
+            // Invalidate all cached lines for new dimensions
+            memset(s_prev_lines[0], 0xFF, src_h * sizeof(s_prev_lines[0]));
+            s_prev_src_w = src_w;
+        }
+        
+        // Handle height growth (new rows need invalidation)
         if (src_h > s_prev_src_h) {
-            // src_h grew (e.g. game → GUI: 208 → 416). The rows from
-            // s_prev_src_h to src_h-1 were never written into s_prev_lines,
-            // so they contain zeros/garbage and will falsely compare as
-            // "clean" against the new pGuiScreen rows — causing the bottom
-            // half of the screen to not be redrawn.
-            // Invalidate only the new rows so they are forced dirty this frame.
             memset(s_prev_lines[s_prev_src_h], 0xFF,
                    (src_h - s_prev_src_h) * sizeof(s_prev_lines[0]));
         }
