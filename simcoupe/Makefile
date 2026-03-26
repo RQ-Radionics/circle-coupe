@@ -25,15 +25,18 @@ CIRCLEHOME = ../circle
 # ---- Platform selection (default: Pi3) ----
 RASPPI ?= 3
 
-ifeq ($(strip $(RASPPI)),2)
-  TOOLCHAIN_FILE  = ../cmake/circle-toolchain-pi2.cmake
-  CMAKE_BUILD     = ../build-pi2
-else ifeq ($(strip $(RASPPI)),3)
-  TOOLCHAIN_FILE  = ../cmake/circle-toolchain.cmake
-  CMAKE_BUILD     = ../build
-else
-  $(error RASPPI must be 2 or 3)
-endif
+ ifeq ($(strip $(RASPPI)),2)
+   TOOLCHAIN_FILE  = ../cmake/circle-toolchain-pi2.cmake
+   CMAKE_BUILD     = ../build-pi2
+ else ifeq ($(strip $(RASPPI)),3)
+   TOOLCHAIN_FILE  = ../cmake/circle-toolchain.cmake
+   CMAKE_BUILD     = ../build
+ else ifeq ($(strip $(RASPPI)),4)
+   TOOLCHAIN_FILE  = ../cmake/circle-toolchain-pi4.cmake
+   CMAKE_BUILD     = ../build-pi4
+ else
+   $(error RASPPI must be 2, 3 or 4)
+ endif
 
 # ---- Object files (Circle entry points only) ----
 OBJS = main.o kernel.o posix_stubs.o fatfs_posix.o syscalls.o circle_fb.o
@@ -108,11 +111,13 @@ LDFLAGS += --allow-multiple-definition
 # We detect the current RASPPI by checking the CPU flags inside libcircle.a.
 # If they don't match, we clean all Circle libs first, then rebuild.
 CIRCLE_CURRENT_CPU := $(shell strings $(CIRCLEHOME)/lib/libcircle.a 2>/dev/null | grep -o 'mcpu=cortex-a[0-9]*' | head -1)
-ifeq ($(strip $(RASPPI)),2)
-  CIRCLE_EXPECTED_CPU = mcpu=cortex-a7
-else
-  CIRCLE_EXPECTED_CPU = mcpu=cortex-a53
-endif
+ ifeq ($(strip $(RASPPI)),2)
+   CIRCLE_EXPECTED_CPU = mcpu=cortex-a7
+ else ifeq ($(strip $(RASPPI)),3)
+   CIRCLE_EXPECTED_CPU = mcpu=cortex-a53
+ else ifeq ($(strip $(RASPPI)),4)
+   CIRCLE_EXPECTED_CPU = mcpu=cortex-a72
+ endif
 
 circle-libs:
 	@if [ -n "$(CIRCLE_CURRENT_CPU)" ] && [ "$(CIRCLE_CURRENT_CPU)" != "$(CIRCLE_EXPECTED_CPU)" ]; then \

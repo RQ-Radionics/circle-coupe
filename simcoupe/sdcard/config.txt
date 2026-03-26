@@ -32,5 +32,17 @@ dtoverlay=disable-bt
 hdmi_drive=2
 hdmi_force_edid_audio=1
 
+# ---- Raspberry Pi 4B / 400 ----
+[pi4]
+kernel=kernel7l.img
+gpu_mem=128
+screen_width=800
+screen_height=600
+# Disable Bluetooth to free PL011 UART for serial debug on GPIO 14/15
+dtoverlay=disable-bt
+# Force HDMI audio
+hdmi_drive=2
+hdmi_force_edid_audio=1
+
 # ---- Back to all models ----
 [all]

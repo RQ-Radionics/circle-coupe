@@ -1,6 +1,6 @@
 # SimCoupe Circle — SAM Coupé Emulator for Raspberry Pi
 
-A bare-metal port of SimCoupe (SAM Coupé emulator) running on Raspberry Pi using the Circle C++ framework.
+A bare-metal port of SimCoupe (SAM Coupé emulator) running on Raspberry Pi 2B/3B/4B/400 using the Circle C++ framework.
 
 ## Introduction
 
@@ -49,6 +49,8 @@ SimCoupe Circle features automatic dual audio output:
 |--------------|--------------------|------------------|
 | Pi 2B        | `kernel7.img`      | Cortex-A7        |
 | Pi 3B        | `kernel8-32.img`   | Cortex-A53       |
+| Pi 4B        | `kernel7l.img`     | Cortex-A72       |
+| Pi 400       | `kernel7l.img`     | Cortex-A72       |
 
 ## Requirements
 
@@ -56,6 +58,7 @@ SimCoupe Circle features automatic dual audio output:
 - **Build tools**: CMake 3.16+, GNU Make
 - **SD Card**: FAT32 formatted, 512MB+ recommended
 - **SAM Coupé ROM**: `samcoupe.rom` (not included)
+- **Raspberry Pi Firmware**: Automatically downloaded during build
 
 ### Installing the toolchain
 
@@ -79,7 +82,13 @@ sudo apt install gcc-arm-none-eabi cmake make
 # Build for Raspberry Pi 2B
 ./build.sh pi2
 
-# Build both versions
+# Build for Raspberry Pi 4B
+./build.sh pi4
+
+# Build for Raspberry Pi 400
+./build.sh p400
+
+# Build all supported versions
 ./build.sh all
 
 # Clean all build artifacts
@@ -92,11 +101,19 @@ Copy the following files to your FAT32 SD card:
 
 ```
 sdcard/
-├── bootcode.bin      # RPi bootloader (from circle/boot/)
-├── start.elf         # RPi firmware (from circle/boot/)
-├── fixup.dat         # RPi firmware (from circle/boot/)
+├── bootcode.bin      # RPi bootloader (Pi 2B/3B only, from circle/boot/)
+├── start.elf         # RPi firmware (Pi 2B/3B, from circle/boot/)
+├── start4.elf        # RPi firmware (Pi 4B/400, from circle/boot/)
+├── fixup.dat         # RPi firmware (Pi 2B/3B, from circle/boot/)
+├── fixup4.dat        # RPi firmware (Pi 4B/400, from circle/boot/)
+├── armstub7-rpi4.bin # ARM stub (Pi 4B/400 only, from circle/boot/)
+├── bcm2711-rpi-4-b.dtb    # Device tree (Pi 4B, from circle/boot/)
+├── bcm2711-rpi-400.dtb    # Device tree (Pi 400, from circle/boot/)
 ├── config.txt        # Boot configuration
-├── kernel.img        # Use kernel7.img for Pi2, kernel8-32.img for Pi3
+├── kernel.img        # Use appropriate kernel for your Pi model:
+│                     #   kernel7.img for Pi 2B
+│                     #   kernel8-32.img for Pi 3B
+│                     #   kernel7l.img for Pi 4B/400
 └── simcoupe/
     ├── samcoupe.rom     # SAM Coupé ROM (required)
     ├── samdos2.sbt      # SAM DOS 2.2 system disk (recommended)
@@ -108,8 +125,14 @@ sdcard/
 
 ### Generating Firmware Files
 
+The build script automatically downloads and verifies firmware files. If needed manually:
+
 ```bash
-make -C circle/boot firmware
+# Download Raspberry Pi firmware
+make -C circle/boot
+
+# Build ARM stub for Pi 4 FIQ support
+make -C circle/boot armstub
 ```
 
 ### Optional ROMs and Resources
@@ -179,6 +202,7 @@ circle-coupe/
 │   └── ...
 ├── build/                # Build artifacts (Pi 3B)
 ├── build-pi2/            # Build artifacts (Pi 2B)
+├── build-pi4/            # Build artifacts (Pi 4B/400)
 ├── scripts/              # Build and utility scripts
 ├── SDL3/                 # SDL3 library (subset used)
 ├── cmake/                # CMake toolchain files
@@ -194,7 +218,7 @@ The `circle-config.mk` file controls build settings:
 | Option              | Value       | Purpose                           |
 |---------------------|-------------|-----------------------------------|
 | `AARCH`             | 32          | 32-bit ARM (AArch32)              |
-| `RASPPI`            | 2 or 3      | Target Pi version                 |
+| `RASPPI`            | 2, 3, or 4  | Target Pi version                 |
 | `KERNEL_MAX_SIZE`   | 0x800000    | 8MB kernel size limit             |
 | `ARM_ALLOW_MULTI_CORE` | (defined) | Enable multicore support       |
 
