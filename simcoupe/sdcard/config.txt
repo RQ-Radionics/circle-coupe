@@ -43,6 +43,7 @@ dtoverlay=disable-bt
 # Force HDMI audio
 hdmi_drive=2
 hdmi_force_edid_audio=1
+sounddev=sndhdmi
 
 # ---- Back to all models ----
 [all]
