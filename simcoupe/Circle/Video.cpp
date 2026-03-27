@@ -76,7 +76,7 @@ public:
     }
 
     void ResizeWindow(int /*height*/) const override {}
-    std::pair<int, int> MouseRelative() override { return { 0, 0 }; }
+    std::pair<int, int> MouseRelative() override;  // defined below class
     void OptionsChanged() override {}
 
     void Update(const FrameBuffer& fb) override
@@ -164,6 +164,15 @@ private:
     unsigned m_fb_w = 0;
     unsigned m_fb_h = 0;
 };
+
+extern "C" void circle_mouse_get_delta(int *dx, int *dy);
+
+std::pair<int, int> CircleVideo::MouseRelative()
+{
+    int dx = 0, dy = 0;
+    circle_mouse_get_delta(&dx, &dy);
+    return { dx, dy };
+}
 
 // Factory function called from UI::CreateVideo()
 std::unique_ptr<IVideoBase> CreateCircleVideo()

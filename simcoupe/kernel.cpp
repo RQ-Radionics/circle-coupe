@@ -40,11 +40,19 @@ namespace Sound { void FrameUpdate(); }
 
 extern "C" void circle_simcoupe_key(unsigned hid_scancode, int pressed,
                                      int mod_shift, int mod_ctrl, int mod_alt);
+extern "C" void circle_mouse_event(unsigned buttons, int dx, int dy);
 
 // Gamepad event callback (defined in Circle/Input.cpp)
 extern "C" void circle_gamepad_event(int joystick, int buttons, int hat_x, int hat_y);
 
 static const char FromKernel[] = "kernel";
+
+// ---- USB mouse handler ----
+static void MouseStatusHandler(unsigned nButtons, int nDisplacementX,
+                                int nDisplacementY, int nWheelMove)
+{
+    circle_mouse_event(nButtons, nDisplacementX, nDisplacementY);
+}
 
     // ---- Sound thread signalling (Core 1 → Core 2) ----
 volatile bool g_sound_frame_pending = false;
@@ -204,6 +212,21 @@ TShutdownMode CKernel::Run()
                 m_Logger.Write(FromKernel, LogNotice, "Keyboard connected");
             }
             s_pLastKeyboard = pKeyboard;
+        }
+
+        // Check for mouse (hot-plug support)
+        CMouseDevice *pMouse = (CMouseDevice *)
+            CDeviceNameService::Get()->GetDevice("mouse1", FALSE);
+        static CMouseDevice *s_pLastMouse = nullptr;
+
+        if (pMouse != s_pLastMouse)
+        {
+            if (pMouse != nullptr)
+            {
+                pMouse->RegisterStatusHandler(MouseStatusHandler);
+                m_Logger.Write(FromKernel, LogNotice, "Mouse connected");
+            }
+            s_pLastMouse = pMouse;
         }
 
         // Check for newly connected gamepads

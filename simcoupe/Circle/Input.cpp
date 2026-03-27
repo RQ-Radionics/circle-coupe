@@ -37,6 +37,23 @@ static volatile KeyEvent s_ring[KBD_RING];
 static volatile int s_ring_head = 0;  // written by USB IRQ (core 0)
 static volatile int s_ring_tail = 0;  // read by emulator (core 1)
 
+// ---- Ring buffer for mouse events (IRQ-safe: one writer, one reader) -----
+
+struct MouseEvent {
+    int dx, dy;
+    unsigned buttons;
+};
+
+static constexpr int MOUSE_RING = 64;
+static volatile MouseEvent s_mouse_ring[MOUSE_RING];
+static volatile int s_mouse_head = 0;
+static volatile int s_mouse_tail = 0;
+static volatile bool s_mouse_acquired = false;
+
+// Accumulated mouse delta (consumed by Video::MouseRelative via GetMouseDelta)
+static volatile int s_mouse_accum_dx = 0;
+static volatile int s_mouse_accum_dy = 0;
+
 // ---- Ring buffer for gamepad events (IRQ-safe: one writer, one reader) ---
 
 struct GamepadEvent {
@@ -67,6 +84,19 @@ extern "C" void circle_simcoupe_key(unsigned hid_scancode, int pressed,
     s_ring[s_ring_head].mod_alt   = mod_alt;
     asm volatile("dmb" ::: "memory");
     s_ring_head = next;
+}
+
+// Called from kernel.cpp mouse status handler (USB IRQ context, core 0)
+extern "C" void circle_mouse_event(unsigned buttons, int dx, int dy)
+{
+    int next = (s_mouse_head + 1) % MOUSE_RING;
+    if (next == s_mouse_tail) return;  // overflow: drop
+
+    s_mouse_ring[s_mouse_head].dx = dx;
+    s_mouse_ring[s_mouse_head].dy = dy;
+    s_mouse_ring[s_mouse_head].buttons = buttons;
+    asm volatile("dmb" ::: "memory");
+    s_mouse_head = next;
 }
 
 // Called from kernel.cpp GamePadStatusHandler (USB IRQ context, core 0)
@@ -256,6 +286,49 @@ void Input::Update()
         Joystick::SetButtons(ev.joystick, joy_buttons);
     }
 
+    // Drain mouse ring buffer
+    int mouse_dx = 0, mouse_dy = 0;
+    unsigned mouse_buttons = 0;
+    bool mouse_events = false;
+
+    asm volatile("dmb" ::: "memory");
+    while (s_mouse_tail != s_mouse_head)
+    {
+        MouseEvent ev;
+        ev.dx = s_mouse_ring[s_mouse_tail].dx;
+        ev.dy = s_mouse_ring[s_mouse_tail].dy;
+        ev.buttons = s_mouse_ring[s_mouse_tail].buttons;
+        asm volatile("dmb" ::: "memory");
+        s_mouse_tail = (s_mouse_tail + 1) % MOUSE_RING;
+
+        mouse_dx += ev.dx;
+        mouse_dy += ev.dy;
+        mouse_buttons = ev.buttons;  // latest button state
+        mouse_events = true;
+    }
+
+    if (mouse_events)
+    {
+        // Accumulate for Video::MouseRelative() (GUI cursor)
+        s_mouse_accum_dx += mouse_dx;
+        s_mouse_accum_dy += mouse_dy;
+
+        // Auto-acquire mouse on first movement
+        if (!s_mouse_acquired && (mouse_dx || mouse_dy))
+            s_mouse_acquired = true;
+
+        // Feed to SAM mouse emulation (scale down — USB mice are much higher DPI than SAM)
+        if (pMouse)
+        {
+            if (mouse_dx || mouse_dy)
+                pMouse->Move(mouse_dx / 4, -mouse_dy / 4);  // Y inverted for SAM
+
+            pMouse->SetButton(1, (mouse_buttons & 0x01) != 0);  // left
+            pMouse->SetButton(2, (mouse_buttons & 0x02) != 0);  // right
+            pMouse->SetButton(3, (mouse_buttons & 0x04) != 0);  // middle
+        }
+    }
+
     Keyboard::Update();
 
     // CapsLock / NumLock are toggle keys — release every frame
@@ -281,7 +354,23 @@ int Input::MapKey(int nKey_)
     return (nKey_ && nKey_ < HK_MIN) ? nKey_ : HK_NONE;
 }
 
-// Mouse stubs — no mouse support yet
 bool Input::FilterEvent(void* /*pEvent_*/) { return false; }
-bool Input::IsMouseAcquired() { return false; }
-void Input::AcquireMouse(bool /*fAcquire_*/) { }
+
+bool Input::IsMouseAcquired()
+{
+    return s_mouse_acquired;
+}
+
+void Input::AcquireMouse(bool fAcquire_)
+{
+    s_mouse_acquired = fAcquire_;
+}
+
+// Called by CircleVideo::MouseRelative() — returns and resets accumulated delta
+extern "C" void circle_mouse_get_delta(int *dx, int *dy)
+{
+    *dx = s_mouse_accum_dx;
+    *dy = s_mouse_accum_dy;
+    s_mouse_accum_dx = 0;
+    s_mouse_accum_dy = 0;
+}
