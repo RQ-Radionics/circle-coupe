@@ -56,11 +56,14 @@ LIBS = \
 	$(CMAKE_BUILD)/_deps/spectrum-build/libspectrum.a \
 	$(CIRCLEHOME)/addon/SDCard/libsdcard.a \
 	$(CIRCLEHOME)/addon/fatfs/libfatfs.a \
-	$(CIRCLEHOME)/lib/sched/libsched.a \
+	$(CIRCLEHOME)/addon/vc4/sound/libvchiqsound.a \
+	$(CIRCLEHOME)/addon/vc4/vchiq/libvchiq.a \
+	$(CIRCLEHOME)/addon/linux/liblinuxemu.a \
 	$(CIRCLEHOME)/lib/usb/libusb.a \
 	$(CIRCLEHOME)/lib/input/libinput.a \
 	$(CIRCLEHOME)/lib/sound/libsound.a \
 	$(CIRCLEHOME)/lib/fs/libfs.a \
+	$(CIRCLEHOME)/lib/sched/libsched.a \
 	$(CIRCLEHOME)/lib/libcircle.a
 
 # ---- Include paths for Circle entry points ----
@@ -76,7 +79,7 @@ INCLUDE += \
 	-I$(CMAKE_BUILD)/simcoupe
 
 # ---- Defines ----
-CFLAGS += -fno-short-enums -DNO_PHYSICAL_COUNTER
+CFLAGS += -fno-short-enums -DNO_PHYSICAL_COUNTER -DUSE_VCHIQ_SOUND
 
 # Disable dependency generation
 CHECK_DEPS = 0
@@ -130,6 +133,8 @@ circle-libs:
 		$(MAKE) -C $(CIRCLEHOME)/lib/fs       RASPPI=$(RASPPI) clean; \
 		$(MAKE) -C $(CIRCLEHOME)/addon/fatfs  RASPPI=$(RASPPI) clean; \
 		$(MAKE) -C $(CIRCLEHOME)/addon/SDCard RASPPI=$(RASPPI) clean; \
+		$(MAKE) -C $(CIRCLEHOME)/addon/vc4/vchiq RASPPI=$(RASPPI) clean; \
+		$(MAKE) -C $(CIRCLEHOME)/addon/vc4/sound RASPPI=$(RASPPI) clean; \
 		rm -f *.o syscalls.o; \
 	fi
 	$(MAKE) -C $(CIRCLEHOME)/lib          RASPPI=$(RASPPI)
@@ -140,6 +145,9 @@ circle-libs:
 	$(MAKE) -C $(CIRCLEHOME)/lib/fs       RASPPI=$(RASPPI)
 	$(MAKE) -C $(CIRCLEHOME)/addon/fatfs  RASPPI=$(RASPPI)
 	$(MAKE) -C $(CIRCLEHOME)/addon/SDCard RASPPI=$(RASPPI)
+	$(MAKE) -C $(CIRCLEHOME)/addon/linux    RASPPI=$(RASPPI)
+	$(MAKE) -C $(CIRCLEHOME)/addon/vc4/vchiq RASPPI=$(RASPPI)
+	$(MAKE) -C $(CIRCLEHOME)/addon/vc4/sound RASPPI=$(RASPPI)
 
 # ---- Rebuild libsimcoupe.a (and SDL3 libs) via CMake whenever sources change ----
 CMAKE_SOURCES := $(shell find ../simcoupe/Base ../simcoupe/Circle ../simcoupe/SDL ../src/video/circle -name '*.cpp' -o -name '*.c' -o -name '*.h' 2>/dev/null)

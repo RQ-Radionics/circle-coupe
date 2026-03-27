@@ -4,6 +4,7 @@
 
 # ---- Common (all models) ----
 arm_64bit=0
+initial_turbo=0
 hdmi_force_hotplug=1
 hdmi_group=2
 hdmi_mode=9
@@ -35,22 +36,22 @@ dtoverlay=disable-bt
 # sounddev=sndhdmi         # HDMI audio (requires HDMI monitor with audio support)
 sounddev=sndpwm
 
-# ---- Raspberry Pi 4B / 400 ----
+# ---- Raspberry Pi 4B / 400 (common) ----
 [pi4]
 kernel=kernel7l.img
+armstub=armstub7-rpi4.bin
 gpu_mem=128
 screen_width=800
 screen_height=600
-# Disable Bluetooth to free PL011 UART for serial debug on GPIO 14/15
 dtoverlay=disable-bt
-# Pi 4/400 specific: Circle kernel7l.img uses the same dtb as pi3
-# Force bcm2711-rpi-4-b.dtb for Pi 4B (same as pi4b-p400 in firmware list)
-# Note: Pi 400 uses bcm2711-rpi-400.dtb, firmware auto-selects it
-# Audio configuration - PWM works on all setups, HDMI requires compatible monitor
-# sounddev=sndpwm          # PWM audio (headphone jack) - default, always works
-# sounddev=sndhdmi         # HDMI audio (requires HDMI monitor with audio support)
-sounddev=sndpwm
 max_framebuffers=2
+# Audio: Pi 4B has headphone jack, PWM works
+sounddev=sndpwm
+
+# ---- Raspberry Pi 400 (overrides) ----
+[pi400]
+# Pi 400 has no headphone jack — HDMI is the only audio output
+sounddev=sndhdmi
 
 # ---- Back to all models ----
 [all]

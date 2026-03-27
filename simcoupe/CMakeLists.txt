@@ -161,6 +161,7 @@ elseif (BUILD_CIRCLE)
   # Circle bare-metal: direct hardware port (no SDL)
   set(CIRCLE_CPP_FILES
     Circle/Audio.cpp
+    Circle/VCHIQSound.cpp
     Circle/Input.cpp
     Circle/OSD.cpp
     Circle/Stubs.cpp

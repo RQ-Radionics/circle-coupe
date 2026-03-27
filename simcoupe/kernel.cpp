@@ -12,6 +12,8 @@
 
 #include <circle/usb/usbkeyboard.h>
 #include <circle/input/mouse.h>
+#include <circle/sound/pwmsoundbasedevice.h>
+#include "Circle/VCHIQSound.h"
 #include <circle/util.h>
 #include <string.h>
 
@@ -23,6 +25,8 @@ constexpr unsigned CHUNK_SIZE  = 512;  // Safe DMA size (~23ms @ 22050Hz)
 
 extern "C" void circle_audio_set_interrupt(void *pInterrupt);
 extern "C" void circle_audio_set_device(void *pDevice);
+extern "C" void circle_audio_set_vchiq_device(void *pDevice);
+extern "C" void circle_audio_set_hdmi_polling(void *pDevice);
 extern "C" void circle_audio_start(void);
 extern "C" void circle_audio_activate(void *pDevice);
 extern "C" int  fatfs_mount(void);
@@ -99,7 +103,8 @@ CKernel::CKernel()
     m_Scheduler(),
     m_USBHCI(&m_Interrupt, &m_Timer, TRUE),
     m_EMMC(&m_Interrupt, &m_Timer),
-    m_PWMSound(&m_Interrupt, SAMPLE_RATE, CHUNK_SIZE),
+    m_VCHIQ(CMemorySystem::Get(), &m_Interrupt),
+    m_pSound(nullptr),
     m_bLaunch(false)
 {
     for (unsigned i = 0; i < MAX_GAMEPADS; i++)
@@ -123,13 +128,19 @@ boolean CKernel::Initialize()
     if (bOK && fatfs_mount() != 0)
         m_Logger.Write(FromKernel, LogWarning, "FatFs mount failed");
 
-    circle_audio_set_interrupt(&m_Interrupt);
-    circle_audio_set_device(&m_PWMSound);
-
     if (bOK && circle_fb_init(800, 600, 8) != 0)
         m_Logger.Write(FromKernel, LogWarning, "Framebuffer init failed");
 
-    // Start secondary cores AFTER VCHIQ init
+    // Sound: PWM for now. HDMI audio via VCHIQ blocked by multicore+VCHIQ conflict.
+    // See beads issue for details. VCHIQ works in single-core (sample 34 tested OK).
+    const char *pSoundDevice = m_Options.GetSoundDevice();
+    if (strcmp(pSoundDevice, "sndhdmi") == 0 || strcmp(pSoundDevice, "hdmi") == 0)
+        m_Logger.Write(FromKernel, LogWarning, "HDMI audio requested but not yet supported with multicore — using PWM");
+
+    m_pSound = new CPWMSoundBaseDevice(&m_Interrupt, SAMPLE_RATE, CHUNK_SIZE);
+    circle_audio_set_interrupt(&m_Interrupt);
+    circle_audio_set_device(m_pSound);
+
     if (bOK) bOK = CMultiCoreSupport::Initialize();
 
     return bOK;
@@ -140,13 +151,13 @@ TShutdownMode CKernel::Run()
 {
     m_USBHCI.UpdatePlugAndPlay();
 
-    // Start PWM audio — device constructed in kernel ctor, queue setup here
-    circle_audio_start();
-
     // Signal core 1 + core 2 to start
     asm volatile("dmb" ::: "memory");
     m_bLaunch = true;
     asm volatile("dmb" ::: "memory");
+
+    // Start PWM audio
+    circle_audio_start();
 
     while (true)
     {
@@ -157,10 +168,9 @@ TShutdownMode CKernel::Run()
         CUSBKeyboardDevice *pKeyboard = (CUSBKeyboardDevice *)
             CDeviceNameService::Get()->GetDevice("ukbd1", FALSE);
         static CUSBKeyboardDevice *s_pLastKeyboard = nullptr;
-        
+
         if (pKeyboard != s_pLastKeyboard)
         {
-            // Keyboard changed (connected or disconnected)
             if (pKeyboard != nullptr)
             {
                 pKeyboard->RegisterKeyStatusHandlerRaw(KeyStatusHandlerRaw, FALSE, nullptr);
@@ -202,50 +212,43 @@ static int s_last_hat[MAX_GAMEPADS] = {0, 0};
 static int s_last_axis_x[MAX_GAMEPADS] = {0, 0};
 static int s_last_axis_y[MAX_GAMEPADS] = {0, 0};
 
-// Gamepad status callback (called from USB IRQ context on core 0)
-// NOTE: Circle passes nDeviceIndex as 0-indexed (m_nDeviceNumber-1)
 void CKernel::GamePadStatusHandler(unsigned nDeviceIndex, const TGamePadState *pState)
 {
     if (nDeviceIndex >= MAX_GAMEPADS) return;
-    
+
     unsigned buttons = pState->buttons;
     int hat = pState->nhats > 0 ? pState->hats[0] : -1;
-    
-    // Convert hat to direction (bmc64-style)
-    // Hat values: 0=centered, 1=N, 2=NE, 3=E, 4=SE, 5=S, 6=SW, 7=W, 8=NW
-    // Values 8-15 (especially 15) are "null position" in USB HID spec
+
     int hat_x = 0, hat_y = 0;
     if (hat >= 1 && hat <= 8) {
-        if (hat == 1 || hat == 2 || hat == 8) hat_y = -1;  // up
-        if (hat == 4 || hat == 5 || hat == 6) hat_y = 1;   // down
-        if (hat == 2 || hat == 3 || hat == 4) hat_x = 1;   // right
-        if (hat == 6 || hat == 7 || hat == 8) hat_x = -1;  // left
+        if (hat == 1 || hat == 2 || hat == 8) hat_y = -1;
+        if (hat == 4 || hat == 5 || hat == 6) hat_y = 1;
+        if (hat == 2 || hat == 3 || hat == 4) hat_x = 1;
+        if (hat == 6 || hat == 7 || hat == 8) hat_x = -1;
     }
-    // Fallback: use axes for dpad if no hat (many gamepads report dpad as axis 0/1)
     else if (pState->naxes >= 2) {
         int centerX = (pState->axes[0].minimum + pState->axes[0].maximum) / 2;
         int centerY = (pState->axes[1].minimum + pState->axes[1].maximum) / 2;
         int rangeX = (pState->axes[0].maximum - pState->axes[0].minimum) / 4;
         int rangeY = (pState->axes[1].maximum - pState->axes[1].minimum) / 4;
-        
+
         if (pState->axes[0].value < centerX - rangeX) hat_x = -1;
         if (pState->axes[0].value > centerX + rangeX) hat_x = 1;
         if (pState->axes[1].value < centerY - rangeY) hat_y = -1;
         if (pState->axes[1].value > centerY + rangeY) hat_y = 1;
     }
-    
-    // Only process if state changed (buttons, or hat, or axis-derived direction)
-    if (buttons == s_last_buttons[nDeviceIndex] && 
+
+    if (buttons == s_last_buttons[nDeviceIndex] &&
         hat == s_last_hat[nDeviceIndex] &&
         hat_x == s_last_axis_x[nDeviceIndex] &&
         hat_y == s_last_axis_y[nDeviceIndex])
         return;
-    
+
     s_last_buttons[nDeviceIndex] = buttons;
     s_last_hat[nDeviceIndex] = hat;
     s_last_axis_x[nDeviceIndex] = hat_x;
     s_last_axis_y[nDeviceIndex] = hat_y;
-    
+
     circle_gamepad_event(nDeviceIndex, (int)buttons, hat_x, hat_y);
 }
 
@@ -285,9 +288,7 @@ void CKernel::Run(unsigned nCore)
     else if (nCore == 2)
     {
         // Core 2: Sound synthesis loop
-        // Activate audio from this core — pass device pointer directly
-        // to avoid cross-core L1 cache visibility issue with s_pSound
-        circle_audio_activate(&m_PWMSound);
+        circle_audio_activate(m_pSound);
 
         while (true)
         {

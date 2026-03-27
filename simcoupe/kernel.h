@@ -14,9 +14,10 @@
 #include <circle/usb/usbhcidevice.h>
 #include <circle/usb/usbgamepad.h>
 #include <circle/multicore.h>
-#include <circle/sound/pwmsoundbasedevice.h>
+#include <circle/sound/soundbasedevice.h>
 #include <circle/types.h>
 #include <SDCard/emmc.h>
+#include <vc4/vchiq/vchiqdevice.h>
 
 #define MAX_GAMEPADS 2
 
@@ -48,7 +49,8 @@ private:
     CScheduler          m_Scheduler;
     CUSBHCIDevice       m_USBHCI;
     CEMMCDevice         m_EMMC;
-    CPWMSoundBaseDevice m_PWMSound;
+    CVCHIQDevice        m_VCHIQ;
+    CSoundBaseDevice   *m_pSound;
 
     CUSBGamePadDevice  *m_pGamePad[MAX_GAMEPADS];
 
