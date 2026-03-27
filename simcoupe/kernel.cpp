@@ -12,7 +12,6 @@
 
 #include <circle/usb/usbkeyboard.h>
 #include <circle/input/mouse.h>
-#include <circle/sound/pwmsoundbasedevice.h>
 #include <circle/screen.h>
 #include "Circle/VCHIQSound.h"
 #include <circle/util.h>
@@ -140,30 +139,20 @@ boolean CKernel::Initialize()
     if (pScreen)
         m_Logger.Initialize(pScreen);
 
+    circle_audio_set_interrupt(&m_Interrupt);
+
+    // All audio goes through VCHIQ — destination selected by sounddev= in cmdline.txt
+    // sounddev=hdmi → HDMI (Pi 400, or any Pi with HDMI audio)
+    // anything else → headphones (Pi 2/3 analog jack)
     const char *pSoundDevice = m_Options.GetSoundDevice();
     bool bHDMI = (strcmp(pSoundDevice, "sndhdmi") == 0 || strcmp(pSoundDevice, "hdmi") == 0);
 
-    circle_audio_set_interrupt(&m_Interrupt);
+    m_Logger.Write(FromKernel, LogNotice, "Sound: VCHIQ %s", bHDMI ? "HDMI" : "headphones");
 
-    // VCHIQ after framebuffer — CScreenDevice keeps HDMI alive
-    if (bHDMI && bOK)
-    {
-        m_Logger.Write(FromKernel, LogNotice, "Sound: VCHIQ HDMI");
-        if (m_VCHIQ.Initialize())
-            m_pSound = nullptr;
-        else
-        {
-            m_Logger.Write(FromKernel, LogWarning, "VCHIQ init failed, fallback PWM");
-            bHDMI = false;
-        }
-    }
-
-    if (!bHDMI)
-    {
-        m_Logger.Write(FromKernel, LogNotice, "Sound device: PWM");
-        m_pSound = new CPWMSoundBaseDevice(&m_Interrupt, SAMPLE_RATE, CHUNK_SIZE);
-        circle_audio_set_device(m_pSound);
-    }
+    if (bOK && m_VCHIQ.Initialize())
+        m_pSound = nullptr;  // VCHIQSound created in Run() where scheduler is active
+    else
+        m_Logger.Write(FromKernel, LogWarning, "VCHIQ init failed — no audio");
 
     if (bOK) bOK = CMultiCoreSupport::Initialize();
 
@@ -180,23 +169,22 @@ TShutdownMode CKernel::Run()
     m_bLaunch = true;
     asm volatile("dmb" ::: "memory");
 
-    // PWM: start immediately (no scheduler needed)
-    if (m_pSound)
-        circle_audio_start();
-
-    // HDMI VCHIQ: init inside main loop where scheduler is yielding
-    bool bAudioStarted = (m_pSound != nullptr);
+    // VCHIQ audio: create in main loop where scheduler is active
+    const char *pSD = m_Options.GetSoundDevice();
+    bool bHDMI = (strcmp(pSD, "sndhdmi") == 0 || strcmp(pSD, "hdmi") == 0);
+    bool bAudioStarted = false;
 
     while (true)
     {
         m_Scheduler.Yield();
         circle_audio_poll();  // drain Core 2 audio ring → VCHIQ on Core 0
 
-        // Deferred VCHIQ audio start — needs scheduler active
         if (!bAudioStarted)
         {
-            auto *pVCHIQ = new VCHIQSound(&m_VCHIQ, SAMPLE_RATE, 1024,
-                                            VCHIQSoundDestinationHDMI);
+            TVCHIQSoundDestination dest = bHDMI
+                ? VCHIQSoundDestinationHDMI
+                : VCHIQSoundDestinationHeadphones;
+            auto *pVCHIQ = new VCHIQSound(&m_VCHIQ, SAMPLE_RATE, 1024, dest);
             circle_audio_set_vchiq_device(pVCHIQ);
             circle_audio_start();
             bAudioStarted = true;

@@ -16,10 +16,11 @@ static CInterruptSystem  *s_pInterrupt = nullptr;
 static volatile bool      s_active     = false;
 
 // Ring buffer for Core 2 → Core 0 audio transfer (VCHIQ needs Core 0's scheduler)
-#define AUDIO_RING_SIZE (22050 * 2 * 2)  // ~1s stereo s16
+#define AUDIO_RING_SIZE (22050 * 2 * 4)  // ~2s stereo s16 — large to avoid drops
 static s16  s_ring[AUDIO_RING_SIZE];
 static volatile unsigned s_ring_wr = 0;
 static volatile unsigned s_ring_rd = 0;
+static volatile unsigned s_ring_drops = 0;
 
 char g_audio_status_buf[64] = "no-init";
 const char *g_audio_status = g_audio_status_buf;
@@ -101,27 +102,42 @@ extern "C" void circle_audio_poll(void)
     unsigned wr = s_ring_wr;
     asm volatile("dmb" ::: "memory");
 
-    if (rd == wr) return;  // empty
+    if (rd == wr) return;  // ring empty — nothing to send
 
     unsigned avail = (wr >= rd) ? (wr - rd) : (AUDIO_RING_SIZE - rd + wr);
-    if (avail > 2048) avail = 2048;
 
-    s16 tmp[2048];
-    for (unsigned i = 0; i < avail; i++) {
-        tmp[i] = s_ring[(rd + i) % AUDIO_RING_SIZE];
+    // Ensure stereo alignment (always send even number of s16 = complete L+R pairs)
+    avail &= ~1u;
+    if (avail == 0) return;
+
+    // Note: no throttle here — VCHIQ handles backpressure via vchi_msg_queue blocking
+
+    // Send in chunks of 1024 (VCHIQ chunk size), send multiple per poll
+    unsigned totalSent = 0;
+    while (avail > 0) {
+        unsigned nChunk = avail > 1024 ? 1024 : avail;
+
+        s16 tmp[1024];
+        for (unsigned i = 0; i < nChunk; i++)
+            tmp[i] = s_ring[(rd + i) % AUDIO_RING_SIZE];
+
+        int sent = s_pVCHIQ->WriteSamples(tmp, nChunk);
+        if (sent <= 0) break;
+
+        rd = (rd + sent) % AUDIO_RING_SIZE;
+        avail -= sent;
+        totalSent += sent;
     }
 
-    int sent = s_pVCHIQ->WriteSamples(tmp, avail);
-    s_poll_last_sent = sent;
-    if (sent > 0) {
+    if (totalSent > 0) {
         asm volatile("dmb" ::: "memory");
-        s_ring_rd = (rd + sent) % AUDIO_RING_SIZE;
+        s_ring_rd = rd;
     }
+    s_poll_last_sent = totalSent;
 
     if ((s_poll_count & 0x3F) == 1)
         snprintf(g_audio_status_buf, sizeof g_audio_status_buf,
-                 "st%d s%d w%u c%u", s_pVCHIQ->GetState(), sent,
-                 s_pVCHIQ->GetWritePos(), s_pVCHIQ->GetCompletePos());
+                 "s%u d%u", totalSent, s_ring_drops);
 }
 
 extern "C" void circle_audio_activate(void *pDevice)
@@ -170,7 +186,10 @@ float Audio::AddData(uint8_t *pData, int len_bytes)
         unsigned wr = s_ring_wr;
         unsigned rd = s_ring_rd;
         unsigned free = (rd > wr) ? (rd - wr - 1) : (AUDIO_RING_SIZE - wr + rd - 1);
-        if (nSamples > free) nSamples = free;  // drop excess
+        if (nSamples > free) {
+            s_ring_drops += nSamples - free;
+            nSamples = free;
+        }
 
         for (unsigned i = 0; i < nSamples; i++)
             s_ring[(wr + i) % AUDIO_RING_SIZE] = pSamples[i];
