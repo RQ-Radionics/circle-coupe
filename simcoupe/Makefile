@@ -39,7 +39,7 @@ RASPPI ?= 3
  endif
 
 # ---- Object files (Circle entry points only) ----
-OBJS = main.o kernel.o posix_stubs.o fatfs_posix.o syscalls.o circle_fb.o
+OBJS = main.o kernel.o posix_stubs.o fatfs_posix.o syscalls.o circle_fb.o linux_multicore_fix.o
 
 # ---- CMake build output ----
 SDL3_LIB_DIR = $(CMAKE_BUILD)/src

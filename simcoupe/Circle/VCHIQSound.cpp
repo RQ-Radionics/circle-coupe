@@ -134,13 +134,14 @@ boolean VCHIQSound::Start()
     // Send two silent chunks to prime the pipeline
     s16 silence[1024];
     memset(silence, 0, sizeof silence);
-    WriteChunk(silence, m_nChunkSize > 1024 ? 1024 : m_nChunkSize);
-    WriteChunk(silence, m_nChunkSize > 1024 ? 1024 : m_nChunkSize);
+    unsigned nChunk = m_nChunkSize > 1024 ? 1024 : m_nChunkSize;
+    int r1 = WriteChunk(silence, nChunk);
+    int r2 = WriteChunk(silence, nChunk);
 
     vchi_service_release(m_hService);
 
-    CLogger::Get()->Write(From, LogNotice, "VCHIQ audio started (%u Hz, dest=%d)",
-                          m_nSampleRate, m_Destination);
+    CLogger::Get()->Write(From, LogNotice, "VCHIQ started (%u Hz d=%d) wc=%d/%d st=%d",
+                          m_nSampleRate, m_Destination, r1, r2, (int)m_State);
     return TRUE;
 }
 
@@ -168,8 +169,21 @@ void VCHIQSound::Cancel()
 
 int VCHIQSound::WriteSamples(const s16 *pBuffer, unsigned nSamples)
 {
-    if (m_State != VCHIQSoundRunning || !pBuffer || nSamples == 0)
+    // Accept Running or Idle — connection stays open after GPU drains initial data
+    if ((m_State != VCHIQSoundRunning && m_State != VCHIQSoundIdle)
+        || !pBuffer || nSamples == 0)
         return 0;
+
+    vchi_service_use(m_hService);
+
+    // If GPU drained all data, re-send START to resume playback
+    if (m_nWritePos == m_nCompletePos && m_nWritePos > 0)
+    {
+        VC_AUDIO_MSG_T Msg;
+        Msg.type = VC_AUDIO_MSG_TYPE_START;
+        vchi_msg_queue(m_hService, &Msg, sizeof Msg,
+                        VCHI_FLAGS_BLOCK_UNTIL_QUEUED, 0);
+    }
 
     unsigned nPos = 0;
     while (nPos < nSamples) {
@@ -177,21 +191,20 @@ int VCHIQSound::WriteSamples(const s16 *pBuffer, unsigned nSamples)
         if (nChunk > m_nChunkSize)
             nChunk = m_nChunkSize;
 
-        vchi_service_use(m_hService);
         int nResult = WriteChunk(pBuffer + nPos, nChunk);
-        vchi_service_release(m_hService);
-
         if (nResult != 0)
-            return nPos;
+            break;
 
         nPos += nChunk;
     }
+
+    vchi_service_release(m_hService);
     return nPos;
 }
 
 int VCHIQSound::WriteChunk(const s16 *pData, unsigned nSamples)
 {
-    if (m_State != VCHIQSoundRunning)
+    if (m_State != VCHIQSoundRunning && m_State != VCHIQSoundIdle)
         return -1;
 
     unsigned nBytes = nSamples * sizeof(s16);

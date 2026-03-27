@@ -10,6 +10,7 @@
 
 #include <stdint.h>
 #include <circle/bcmframebuffer.h>
+#include <circle/screen.h>
 
 /* Microseconds since boot - reads CNTPCT directly, same fix as SDL_circletimer_impl.cpp */
 static inline unsigned long long circle_get_clock_ticks64_us(void)
@@ -26,7 +27,8 @@ static inline unsigned long long circle_get_clock_ticks64_us(void)
 #endif
 }
 
-static CBcmFrameBuffer *s_pFrameBuffer = nullptr;
+static CScreenDevice   *s_pScreen      = nullptr;
+static CBcmFrameBuffer *s_pFrameBuffer = nullptr;  // owned by CScreenDevice
 static unsigned s_back_buffer = 0;  /* 0 or 1 -- which buffer is the back */
 
 /* Physical dimensions */
@@ -38,20 +40,26 @@ extern "C" {
 
 int circle_fb_init(unsigned w, unsigned h, unsigned depth)
 {
+    if (s_pScreen) {
+        delete s_pScreen;
+        s_pScreen = nullptr;
+    }
     if (s_pFrameBuffer) {
         delete s_pFrameBuffer;
         s_pFrameBuffer = nullptr;
     }
 
-    /* Single buffer — dirty-line detection writes directly to visible buffer.
-     * Double buffer caused parpadeo because non-repainted lines showed
-     * stale data from 2 frames ago. */
-    s_pFrameBuffer = new CBcmFrameBuffer(w, h, depth);
-    if (!s_pFrameBuffer->Initialize()) {
-        delete s_pFrameBuffer;
-        s_pFrameBuffer = nullptr;
+    /* CScreenDevice creates framebuffer that survives VCHIQ init on Pi 4.
+     * We use its framebuffer directly (32-bit) — no separate 8-bit buffer. */
+    (void)depth;  // ignored — CScreenDevice uses DEPTH (32)
+    s_pScreen = new CScreenDevice(w, h);
+    if (!s_pScreen->Initialize()) {
+        delete s_pScreen;
+        s_pScreen = nullptr;
         return -1;
     }
+
+    s_pFrameBuffer = s_pScreen->GetFrameBuffer();
 
     s_width  = s_pFrameBuffer->GetWidth();
     s_height = s_pFrameBuffer->GetHeight();
@@ -63,9 +71,10 @@ int circle_fb_init(unsigned w, unsigned h, unsigned depth)
 
 void circle_fb_quit(void)
 {
-    if (s_pFrameBuffer) {
-        delete s_pFrameBuffer;
-        s_pFrameBuffer = nullptr;
+    s_pFrameBuffer = nullptr;  // owned by CScreenDevice
+    if (s_pScreen) {
+        delete s_pScreen;
+        s_pScreen = nullptr;
     }
     s_width = s_height = s_pitch = 0;
 }
@@ -77,6 +86,11 @@ unsigned circle_fb_get_pitch(void)  { return s_pitch; }
 unsigned circle_fb_get_depth(void)
 {
     return s_pFrameBuffer ? s_pFrameBuffer->GetDepth() : 0;
+}
+
+void *circle_fb_get_screen_device(void)
+{
+    return s_pScreen;
 }
 
 /* Returns pointer to the BACK buffer (the one we draw into) */

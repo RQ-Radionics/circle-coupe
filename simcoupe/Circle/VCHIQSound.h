@@ -35,6 +35,9 @@ public:
     boolean Start();
     void Cancel();
     boolean IsActive() const { return m_State >= VCHIQSoundRunning; }
+    int GetState() const { return (int)m_State; }
+    unsigned GetWritePos() const { return m_nWritePos; }
+    unsigned GetCompletePos() const { return m_nCompletePos; }
 
     // Push audio data directly to VC4 (called from any core)
     int WriteSamples(const s16 *pBuffer, unsigned nSamples);

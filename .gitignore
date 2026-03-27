@@ -24,3 +24,5 @@ __pycache__/
 # Dolt database files (added by bd init)
 .dolt/
 *.db
+sd-backup/
+sd-backup/

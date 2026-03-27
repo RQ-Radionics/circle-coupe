@@ -29,36 +29,24 @@ extern "C" {
     unsigned long long circle_get_clock_ticks64(void);
 }
 
-// ---- Palette: SAM hardware → GPU hardware palette -----------------------
-// Only update if palette actually changed (avoids full-screen flash).
+// ---- Palette: SAM hardware → 32-bit ARGB lookup table ------------------
+// With CScreenDevice (32-bit FB), we can't use HW palette. Convert on CPU.
 
-struct PalEntry { uint8_t r, g, b; };
-static PalEntry s_prev_pal[256] = {};
+static uint32_t s_palette32[256] = {};
 static bool s_pal_inited = false;
 
 static void BuildPalette()
 {
     auto hw = IO::Palette();
-    bool changed = false;
 
     for (int i = 0; i < 256; i++)
     {
         auto& c = hw[i % NUM_PALETTE_COLOURS];
-        if (!s_pal_inited ||
-            s_prev_pal[i].r != c.red ||
-            s_prev_pal[i].g != c.green ||
-            s_prev_pal[i].b != c.blue)
-        {
-            circle_fb_set_palette(i, c.red, c.green, c.blue);
-            s_prev_pal[i] = { c.red, c.green, c.blue };
-            changed = true;
-        }
+        // ARGB format: 0xFFRRGGBB
+        s_palette32[i] = (0xFFu << 24) | ((uint32_t)c.red << 16)
+                        | ((uint32_t)c.green << 8) | c.blue;
     }
-
-    if (changed) {
-        circle_fb_update_palette();
-        s_pal_inited = true;
-    }
+    s_pal_inited = true;
 }
 
 // ---- CircleVideo: IVideoBase implementation -----------------------------
@@ -129,24 +117,18 @@ public:
             s_xtab_sw = src_w;
         }
 
-        // 8-bit blit with dirty-line detection.
-        // Only write lines whose source changed since last frame.
-        // This dramatically reduces uncached GPU writes for static screens.
-        // Buffer sized for maximum "full active" mode: 640 pixels wide, 576 lines (GUI doubles height)
-        static uint8_t s_prev_lines[640][640];  // max src_h × src_w
+        // 32-bit blit with dirty-line detection.
+        // Convert 8-bit palette indices to 32-bit ARGB via s_palette32[] LUT.
+        static uint8_t s_prev_lines[640][640];
         static int s_prev_src_w = 0;
         static int s_prev_src_h = 0;
-        
-        // Clear borders when dimensions change (e.g., switching view mode or GUI on/off)
-        // This prevents stale data from larger views appearing in smaller view borders
+
         if (src_w != s_prev_src_w || src_h != s_prev_src_h) {
             memset(fbuf, 0, fb_h * pitch);
-            // Invalidate all cached lines for new dimensions
             memset(s_prev_lines[0], 0xFF, src_h * sizeof(s_prev_lines[0]));
             s_prev_src_w = src_w;
         }
-        
-        // Handle height growth (new rows need invalidation)
+
         if (src_h > s_prev_src_h) {
             memset(s_prev_lines[s_prev_src_h], 0xFF,
                    (src_h - s_prev_src_h) * sizeof(s_prev_lines[0]));
@@ -158,22 +140,18 @@ public:
         {
             auto pLine = fb.GetLine(sy);
 
-            // Check if this source line changed
             bool dirty = (memcmp(s_prev_lines[sy], pLine, src_w) != 0);
             if (!dirty) continue;
 
-            // Cache new line for next comparison
             memcpy(s_prev_lines[sy], pLine, src_w);
 
-            // Write all destination rows that map to this source line
-            // (with nearest-neighbor scaling, multiple dst rows may map to same src)
             for (int dy = sy * dst_h / src_h;
                  dy < (sy + 1) * dst_h / src_h && dy < dst_h;
                  dy++)
             {
-                uint8_t *row = fb8 + (off_y + dy) * pitch + off_x;
+                uint32_t *row = (uint32_t *)(fb8 + (off_y + dy) * pitch) + off_x;
                 for (int dx = 0; dx < dst_w; dx++)
-                    row[dx] = pLine[s_xtab[dx]];
+                    row[dx] = s_palette32[pLine[s_xtab[dx]]];
             }
         }
 

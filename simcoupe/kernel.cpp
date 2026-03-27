@@ -13,6 +13,7 @@
 #include <circle/usb/usbkeyboard.h>
 #include <circle/input/mouse.h>
 #include <circle/sound/pwmsoundbasedevice.h>
+#include <circle/screen.h>
 #include "Circle/VCHIQSound.h"
 #include <circle/util.h>
 #include <string.h>
@@ -29,8 +30,10 @@ extern "C" void circle_audio_set_vchiq_device(void *pDevice);
 extern "C" void circle_audio_set_hdmi_polling(void *pDevice);
 extern "C" void circle_audio_start(void);
 extern "C" void circle_audio_activate(void *pDevice);
+extern "C" void circle_audio_poll(void);
 extern "C" int  fatfs_mount(void);
 extern "C" int  circle_fb_init(unsigned w, unsigned h, unsigned depth);
+extern "C" void *circle_fb_get_screen_device(void);
 
 namespace Main { bool Init(int argc, char *argv[]); void Exit(); }
 namespace CPU  { void Run(); void Exit(); }
@@ -128,18 +131,39 @@ boolean CKernel::Initialize()
     if (bOK && fatfs_mount() != 0)
         m_Logger.Write(FromKernel, LogWarning, "FatFs mount failed");
 
+    // CScreenDevice inside circle_fb_init anchors HDMI — survives VCHIQ init
     if (bOK && circle_fb_init(800, 600, 8) != 0)
         m_Logger.Write(FromKernel, LogWarning, "Framebuffer init failed");
 
-    // Sound: PWM for now. HDMI audio via VCHIQ blocked by multicore+VCHIQ conflict.
-    // See beads issue for details. VCHIQ works in single-core (sample 34 tested OK).
-    const char *pSoundDevice = m_Options.GetSoundDevice();
-    if (strcmp(pSoundDevice, "sndhdmi") == 0 || strcmp(pSoundDevice, "hdmi") == 0)
-        m_Logger.Write(FromKernel, LogWarning, "HDMI audio requested but not yet supported with multicore — using PWM");
+    // Redirect logger to screen so we can see output on HDMI
+    CScreenDevice *pScreen = (CScreenDevice *)circle_fb_get_screen_device();
+    if (pScreen)
+        m_Logger.Initialize(pScreen);
 
-    m_pSound = new CPWMSoundBaseDevice(&m_Interrupt, SAMPLE_RATE, CHUNK_SIZE);
+    const char *pSoundDevice = m_Options.GetSoundDevice();
+    bool bHDMI = (strcmp(pSoundDevice, "sndhdmi") == 0 || strcmp(pSoundDevice, "hdmi") == 0);
+
     circle_audio_set_interrupt(&m_Interrupt);
-    circle_audio_set_device(m_pSound);
+
+    // VCHIQ after framebuffer — CScreenDevice keeps HDMI alive
+    if (bHDMI && bOK)
+    {
+        m_Logger.Write(FromKernel, LogNotice, "Sound: VCHIQ HDMI");
+        if (m_VCHIQ.Initialize())
+            m_pSound = nullptr;
+        else
+        {
+            m_Logger.Write(FromKernel, LogWarning, "VCHIQ init failed, fallback PWM");
+            bHDMI = false;
+        }
+    }
+
+    if (!bHDMI)
+    {
+        m_Logger.Write(FromKernel, LogNotice, "Sound device: PWM");
+        m_pSound = new CPWMSoundBaseDevice(&m_Interrupt, SAMPLE_RATE, CHUNK_SIZE);
+        circle_audio_set_device(m_pSound);
+    }
 
     if (bOK) bOK = CMultiCoreSupport::Initialize();
 
@@ -156,12 +180,27 @@ TShutdownMode CKernel::Run()
     m_bLaunch = true;
     asm volatile("dmb" ::: "memory");
 
-    // Start PWM audio
-    circle_audio_start();
+    // PWM: start immediately (no scheduler needed)
+    if (m_pSound)
+        circle_audio_start();
+
+    // HDMI VCHIQ: init inside main loop where scheduler is yielding
+    bool bAudioStarted = (m_pSound != nullptr);
 
     while (true)
     {
         m_Scheduler.Yield();
+        circle_audio_poll();  // drain Core 2 audio ring → VCHIQ on Core 0
+
+        // Deferred VCHIQ audio start — needs scheduler active
+        if (!bAudioStarted)
+        {
+            auto *pVCHIQ = new VCHIQSound(&m_VCHIQ, SAMPLE_RATE, 1024,
+                                            VCHIQSoundDestinationHDMI);
+            circle_audio_set_vchiq_device(pVCHIQ);
+            circle_audio_start();
+            bAudioStarted = true;
+        }
         m_USBHCI.UpdatePlugAndPlay();
 
         // Check for keyboard (hot-plug support)
