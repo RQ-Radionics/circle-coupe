@@ -43,10 +43,14 @@ screen_width=800
 screen_height=600
 # Disable Bluetooth to free PL011 UART for serial debug on GPIO 14/15
 dtoverlay=disable-bt
+# Pi 4/400 specific: Circle kernel7l.img uses the same dtb as pi3
+# Force bcm2711-rpi-4-b.dtb for Pi 4B (same as pi4b-p400 in firmware list)
+# Note: Pi 400 uses bcm2711-rpi-400.dtb, firmware auto-selects it
 # Audio configuration - PWM works on all setups, HDMI requires compatible monitor
 # sounddev=sndpwm          # PWM audio (headphone jack) - default, always works
 # sounddev=sndhdmi         # HDMI audio (requires HDMI monitor with audio support)
 sounddev=sndpwm
+max_framebuffers=2
 
 # ---- Back to all models ----
 [all]
