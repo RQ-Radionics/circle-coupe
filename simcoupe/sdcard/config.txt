@@ -4,6 +4,7 @@
 
 # ---- Common (all models) ----
 arm_64bit=0
+initial_turbo=0
 hdmi_force_hotplug=1
 hdmi_group=2
 hdmi_mode=9
@@ -19,6 +20,8 @@ gpu_mem=64
 screen_width=800
 screen_height=600
 # Pi2 has no Bluetooth — PL011 UART available directly, no overlay needed
+# Audio configuration - PWM works reliably on Pi 2
+sounddev=sndpwm
 
 # ---- Raspberry Pi 3B ----
 [pi3]
@@ -28,9 +31,27 @@ screen_width=800
 screen_height=600
 # Disable Bluetooth to free PL011 UART for serial debug on GPIO 14/15
 dtoverlay=disable-bt
-# Force HDMI audio
-hdmi_drive=2
-hdmi_force_edid_audio=1
+# Audio configuration - PWM works on all setups, HDMI requires compatible monitor
+# sounddev=sndpwm          # PWM audio (headphone jack) - default, always works
+# sounddev=sndhdmi         # HDMI audio (requires HDMI monitor with audio support)
+sounddev=sndpwm
+
+# ---- Raspberry Pi 4B / 400 (common) ----
+[pi4]
+kernel=kernel7l.img
+armstub=armstub7-rpi4.bin
+gpu_mem=128
+screen_width=800
+screen_height=600
+dtoverlay=disable-bt
+max_framebuffers=2
+# Audio: Pi 4B has headphone jack, PWM works
+sounddev=sndpwm
+
+# ---- Raspberry Pi 400 (overrides) ----
+[pi400]
+# Pi 400 has no headphone jack — HDMI is the only audio output
+sounddev=sndhdmi
 
 # ---- Back to all models ----
 [all]

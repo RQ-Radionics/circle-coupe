@@ -24,6 +24,8 @@
 #include "SAMIO.h"
 #include "FrameBuffer.h"
 
+#include <memory>
+
 const int GM_MOUSE_MESSAGE = 0x40000000;
 const int GM_KEYBOARD_MESSAGE = 0x20000000;
 const int GM_TYPE_MASK = 0x60000000;
@@ -52,6 +54,8 @@ public:
 public:
     static bool Start(Window* pGUI_);
     static void Stop();
+    static void BackupFramebuffer();
+    static void RestoreFramebuffer();
 
     static void Draw(FrameBuffer& fb);
     static bool SendMessage(int nMessage_, int nParam1_ = 0, int nParam2_ = 0);
@@ -62,6 +66,8 @@ protected:
     static std::queue<Window*> s_garbageQueue;
     static std::stack<Window*> s_dialogStack;
     static int s_nX, s_nY;
+    static std::unique_ptr<uint8_t[]> s_framebufferBackup;
+    static size_t s_backupSize;
 
     friend class Window;
     friend class Dialog;     // only needed for test cross-hair to access cursor position

@@ -1,10 +1,10 @@
-# cmake/circle-toolchain.cmake
+# cmake/circle-toolchain-pi4.cmake
 #
-# CMake toolchain file for Circle bare-metal on Raspberry Pi 3B (AArch32)
-# Target: ARM Cortex-A53, arm-none-eabi-gcc, kernel8-32.img
+# CMake toolchain file for Circle bare-metal on Raspberry Pi 4 (AArch32)
+# Target: ARM Cortex-A72, arm-none-eabi-gcc, kernel8-rpi4.img
 #
 # Usage:
-#   cmake -B build -DCMAKE_TOOLCHAIN_FILE=cmake/circle-toolchain.cmake
+#   cmake -B build-pi4 -DCMAKE_TOOLCHAIN_FILE=cmake/circle-toolchain-pi4.cmake
 #
 
 # --- System ---
@@ -26,9 +26,9 @@ find_program(CMAKE_OBJCOPY      ${CROSS_PREFIX}objcopy)
 find_program(CMAKE_OBJDUMP      ${CROSS_PREFIX}objdump)
 find_program(CMAKE_SIZE         ${CROSS_PREFIX}size)
 
-# --- CPU flags for RPi3 Cortex-A53 AArch32 ---
+# --- CPU flags for RPi4 Cortex-A72 AArch32 ---
 set(CIRCLE_CPU_FLAGS
-    "-mcpu=cortex-a53 -marm -mfpu=neon-fp-armv8 -mfloat-abi=hard"
+    "-mcpu=cortex-a72 -marm -mfpu=neon-fp-armv8 -mfloat-abi=hard"
 )
 
 # --- Common bare-metal flags ---
@@ -41,17 +41,16 @@ set(CIRCLE_CPU_FLAGS
 set(CIRCLE_BARE_FLAGS
     "-ffreestanding -fno-exceptions -fno-rtti -fno-unwind-tables"
     " -fno-asynchronous-unwind-tables -fsigned-char -O2 -g"
-    " -DAARCH=32 -DRASPPI=3 -DSTDLIB_SUPPORT=1 -D__circle__=500100"
+    " -DAARCH=32 -DRASPPI=4 -DSTDLIB_SUPPORT=1 -D__circle__=500100"
     " -D__VCCOREVER__=0x04000000 -U__unix__ -U__linux__"
     " -DKERNEL_MAX_SIZE=0x800000 -DDEPTH=32"
 )
 string(REPLACE ";" " " CIRCLE_BARE_FLAGS "${CIRCLE_BARE_FLAGS}")
 
-set(CMAKE_C_FLAGS_INIT   "${CIRCLE_CPU_FLAGS} -ffreestanding -fno-unwind-tables -fno-asynchronous-unwind-tables -fsigned-char -O3 -g -DAARCH=32 -DRASPPI=3 -DSTDLIB_SUPPORT=1 -D__circle__=500100 -D__VCCOREVER__=0x04000000 -U__unix__ -U__linux__ -DKERNEL_MAX_SIZE=0x800000 -DDEPTH=32 -DNO_PHYSICAL_COUNTER -DARM_ALLOW_MULTI_CORE")
+set(CMAKE_C_FLAGS_INIT   "${CIRCLE_CPU_FLAGS} -ffreestanding -fno-unwind-tables -fno-asynchronous-unwind-tables -fsigned-char -O3 -g -DAARCH=32 -DRASPPI=4 -DSTDLIB_SUPPORT=1 -D__circle__=500100 -D__VCCOREVER__=0x04000000 -U__unix__ -U__linux__ -DKERNEL_MAX_SIZE=0x800000 -DDEPTH=32 -DNO_PHYSICAL_COUNTER -DARM_ALLOW_MULTI_CORE")
 # CXX: NO -ffreestanding here — hosted C++ headers required by SimCoupe deps.
-# Targets that need freestanding (SDL3-circle, kernel) add it via target_compile_options.
-set(CMAKE_CXX_FLAGS_INIT "${CIRCLE_CPU_FLAGS} -fno-exceptions -fno-rtti -fno-unwind-tables -fno-asynchronous-unwind-tables -fsigned-char -O3 -g -DAARCH=32 -DRASPPI=3 -DSTDLIB_SUPPORT=1 -D__circle__=500100 -D__VCCOREVER__=0x04000000 -U__unix__ -U__linux__ -DKERNEL_MAX_SIZE=0x800000 -DDEPTH=32 -DNO_PHYSICAL_COUNTER -DARM_ALLOW_MULTI_CORE -std=c++17 -Wno-aligned-new")
-set(CMAKE_ASM_FLAGS_INIT "${CIRCLE_CPU_FLAGS} -ffreestanding -O2 -g -DAARCH=32 -DRASPPI=3 -DSTDLIB_SUPPORT=1 -D__circle__=500100 -U__unix__ -U__linux__ -DKERNEL_MAX_SIZE=0x800000 -DDEPTH=32 -DARM_ALLOW_MULTI_CORE")
+set(CMAKE_CXX_FLAGS_INIT "${CIRCLE_CPU_FLAGS} -fno-exceptions -fno-rtti -fno-unwind-tables -fno-asynchronous-unwind-tables -fsigned-char -O3 -g -DAARCH=32 -DRASPPI=4 -DSTDLIB_SUPPORT=1 -D__circle__=500100 -D__VCCOREVER__=0x04000000 -U__unix__ -U__linux__ -DKERNEL_MAX_SIZE=0x800000 -DDEPTH=32 -DNO_PHYSICAL_COUNTER -DARM_ALLOW_MULTI_CORE -std=c++17 -Wno-aligned-new")
+set(CMAKE_ASM_FLAGS_INIT "${CIRCLE_CPU_FLAGS} -ffreestanding -O2 -g -DAARCH=32 -DRASPPI=4 -DSTDLIB_SUPPORT=1 -D__circle__=500100 -U__unix__ -U__linux__ -DKERNEL_MAX_SIZE=0x800000 -DDEPTH=32 -DARM_ALLOW_MULTI_CORE")
 
 # No dynamic linking on bare-metal
 set(CMAKE_SHARED_LIBRARY_LINK_C_FLAGS   "")
@@ -79,7 +78,7 @@ set(CIRCLE_LIBRARIES
 
 # libgcc is needed for soft-float helpers, __aeabi_* etc.
 execute_process(
-    COMMAND ${CROSS_PREFIX}gcc -mcpu=cortex-a53 -marm -mfpu=neon-fp-armv8
+    COMMAND ${CROSS_PREFIX}gcc -mcpu=cortex-a72 -marm -mfpu=neon-fp-armv8
             -mfloat-abi=hard -print-file-name=libgcc.a
     OUTPUT_VARIABLE CIRCLE_LIBGCC
     OUTPUT_STRIP_TRAILING_WHITESPACE

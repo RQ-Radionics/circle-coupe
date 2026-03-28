@@ -25,18 +25,21 @@ CIRCLEHOME = ../circle
 # ---- Platform selection (default: Pi3) ----
 RASPPI ?= 3
 
-ifeq ($(strip $(RASPPI)),2)
-  TOOLCHAIN_FILE  = ../cmake/circle-toolchain-pi2.cmake
-  CMAKE_BUILD     = ../build-pi2
-else ifeq ($(strip $(RASPPI)),3)
-  TOOLCHAIN_FILE  = ../cmake/circle-toolchain.cmake
-  CMAKE_BUILD     = ../build
-else
-  $(error RASPPI must be 2 or 3)
-endif
+ ifeq ($(strip $(RASPPI)),2)
+   TOOLCHAIN_FILE  = ../cmake/circle-toolchain-pi2.cmake
+   CMAKE_BUILD     = ../build-pi2
+ else ifeq ($(strip $(RASPPI)),3)
+   TOOLCHAIN_FILE  = ../cmake/circle-toolchain.cmake
+   CMAKE_BUILD     = ../build
+ else ifeq ($(strip $(RASPPI)),4)
+   TOOLCHAIN_FILE  = ../cmake/circle-toolchain-pi4.cmake
+   CMAKE_BUILD     = ../build-pi4
+ else
+   $(error RASPPI must be 2, 3 or 4)
+ endif
 
 # ---- Object files (Circle entry points only) ----
-OBJS = main.o kernel.o posix_stubs.o fatfs_posix.o ../kernel/syscalls.o circle_fb.o
+OBJS = main.o kernel.o posix_stubs.o fatfs_posix.o syscalls.o circle_fb.o linux_multicore_fix.o
 
 # ---- CMake build output ----
 SDL3_LIB_DIR = $(CMAKE_BUILD)/src
@@ -53,11 +56,14 @@ LIBS = \
 	$(CMAKE_BUILD)/_deps/spectrum-build/libspectrum.a \
 	$(CIRCLEHOME)/addon/SDCard/libsdcard.a \
 	$(CIRCLEHOME)/addon/fatfs/libfatfs.a \
-	$(CIRCLEHOME)/lib/sched/libsched.a \
+	$(CIRCLEHOME)/addon/vc4/sound/libvchiqsound.a \
+	$(CIRCLEHOME)/addon/vc4/vchiq/libvchiq.a \
+	$(CIRCLEHOME)/addon/linux/liblinuxemu.a \
 	$(CIRCLEHOME)/lib/usb/libusb.a \
 	$(CIRCLEHOME)/lib/input/libinput.a \
 	$(CIRCLEHOME)/lib/sound/libsound.a \
 	$(CIRCLEHOME)/lib/fs/libfs.a \
+	$(CIRCLEHOME)/lib/sched/libsched.a \
 	$(CIRCLEHOME)/lib/libcircle.a
 
 # ---- Include paths for Circle entry points ----
@@ -73,7 +79,7 @@ INCLUDE += \
 	-I$(CMAKE_BUILD)/simcoupe
 
 # ---- Defines ----
-CFLAGS += -fno-short-enums -DNO_PHYSICAL_COUNTER
+CFLAGS += -fno-short-enums -DNO_PHYSICAL_COUNTER -DUSE_VCHIQ_SOUND
 
 # Disable dependency generation
 CHECK_DEPS = 0
@@ -108,14 +114,16 @@ LDFLAGS += --allow-multiple-definition
 # We detect the current RASPPI by checking the CPU flags inside libcircle.a.
 # If they don't match, we clean all Circle libs first, then rebuild.
 CIRCLE_CURRENT_CPU := $(shell strings $(CIRCLEHOME)/lib/libcircle.a 2>/dev/null | grep -o 'mcpu=cortex-a[0-9]*' | head -1)
-ifeq ($(strip $(RASPPI)),2)
-  CIRCLE_EXPECTED_CPU = mcpu=cortex-a7
-else
-  CIRCLE_EXPECTED_CPU = mcpu=cortex-a53
-endif
+ ifeq ($(strip $(RASPPI)),2)
+   CIRCLE_EXPECTED_CPU = mcpu=cortex-a7
+ else ifeq ($(strip $(RASPPI)),3)
+   CIRCLE_EXPECTED_CPU = mcpu=cortex-a53
+ else ifeq ($(strip $(RASPPI)),4)
+   CIRCLE_EXPECTED_CPU = mcpu=cortex-a72
+ endif
 
 circle-libs:
-	@if [ "$(CIRCLE_CURRENT_CPU)" != "$(CIRCLE_EXPECTED_CPU)" ]; then \
+	@if [ -n "$(CIRCLE_CURRENT_CPU)" ] && [ "$(CIRCLE_CURRENT_CPU)" != "$(CIRCLE_EXPECTED_CPU)" ]; then \
 		echo "  CLEAN Circle libs + local objects (was $(CIRCLE_CURRENT_CPU), need $(CIRCLE_EXPECTED_CPU))"; \
 		$(MAKE) -C $(CIRCLEHOME)/lib          RASPPI=$(RASPPI) clean; \
 		$(MAKE) -C $(CIRCLEHOME)/lib/usb      RASPPI=$(RASPPI) clean; \
@@ -125,7 +133,10 @@ circle-libs:
 		$(MAKE) -C $(CIRCLEHOME)/lib/fs       RASPPI=$(RASPPI) clean; \
 		$(MAKE) -C $(CIRCLEHOME)/addon/fatfs  RASPPI=$(RASPPI) clean; \
 		$(MAKE) -C $(CIRCLEHOME)/addon/SDCard RASPPI=$(RASPPI) clean; \
-		rm -f *.o ../kernel/syscalls.o; \
+		$(MAKE) -C $(CIRCLEHOME)/addon/linux     RASPPI=$(RASPPI) clean; \
+		$(MAKE) -C $(CIRCLEHOME)/addon/vc4/vchiq RASPPI=$(RASPPI) clean; \
+		$(MAKE) -C $(CIRCLEHOME)/addon/vc4/sound RASPPI=$(RASPPI) clean; \
+		rm -f *.o syscalls.o; \
 	fi
 	$(MAKE) -C $(CIRCLEHOME)/lib          RASPPI=$(RASPPI)
 	$(MAKE) -C $(CIRCLEHOME)/lib/usb      RASPPI=$(RASPPI)
@@ -135,6 +146,9 @@ circle-libs:
 	$(MAKE) -C $(CIRCLEHOME)/lib/fs       RASPPI=$(RASPPI)
 	$(MAKE) -C $(CIRCLEHOME)/addon/fatfs  RASPPI=$(RASPPI)
 	$(MAKE) -C $(CIRCLEHOME)/addon/SDCard RASPPI=$(RASPPI)
+	$(MAKE) -C $(CIRCLEHOME)/addon/linux    RASPPI=$(RASPPI)
+	$(MAKE) -C $(CIRCLEHOME)/addon/vc4/vchiq RASPPI=$(RASPPI)
+	$(MAKE) -C $(CIRCLEHOME)/addon/vc4/sound RASPPI=$(RASPPI)
 
 # ---- Rebuild libsimcoupe.a (and SDL3 libs) via CMake whenever sources change ----
 CMAKE_SOURCES := $(shell find ../simcoupe/Base ../simcoupe/Circle ../simcoupe/SDL ../src/video/circle -name '*.cpp' -o -name '*.c' -o -name '*.h' 2>/dev/null)
@@ -148,8 +162,30 @@ $(SIMCOUPE_LIB): $(CMAKE_SOURCES)
 	fi
 	cmake --build $(CMAKE_BUILD) --parallel $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
-# Make the kernel depend on the CMake lib and Circle libs
-$(TARGET).img: $(SIMCOUPE_LIB) circle-libs
+# All CMake-built libraries depend on the main simcoupe lib target
+# (which triggers the full CMake build)
+$(CMAKE_BUILD)/simcoupe/libwhereami.a \
+$(CMAKE_BUILD)/_deps/saasound-build/libSAASound.a \
+$(CMAKE_BUILD)/_deps/fmt-build/libfmt.a \
+$(CMAKE_BUILD)/_deps/resid-build/libresid.a \
+$(CMAKE_BUILD)/_deps/spectrum-build/libspectrum.a: $(SIMCOUPE_LIB)
+	@:
+
+# Make the kernel depend on the CMake lib and object files
+# OBJS must be a hard dependency, circle-libs is order-only (|)
+$(TARGET).img: $(OBJS) $(SIMCOUPE_LIB) | circle-libs
+
+# Circle library files depend on circle-libs target (phony dependency)
+# This tells make: "if any of these files are needed, run circle-libs first"
+$(CIRCLEHOME)/addon/SDCard/libsdcard.a \
+$(CIRCLEHOME)/addon/fatfs/libfatfs.a \
+$(CIRCLEHOME)/lib/libcircle.a \
+$(CIRCLEHOME)/lib/usb/libusb.a \
+$(CIRCLEHOME)/lib/input/libinput.a \
+$(CIRCLEHOME)/lib/sound/libsound.a \
+$(CIRCLEHOME)/lib/sched/libsched.a \
+$(CIRCLEHOME)/lib/fs/libfs.a: circle-libs
+	@:
 
 # ---- posix_stubs.cpp: needs Circle types FIRST to avoid time_t conflict ----
 posix_stubs.o: posix_stubs.cpp

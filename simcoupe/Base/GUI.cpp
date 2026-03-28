@@ -44,6 +44,14 @@
 #include "UI.h"
 #include "Video.h"
 
+// circle_fb API declarations for framebuffer backup/restore
+extern "C" {
+    unsigned circle_fb_get_width(void);
+    unsigned circle_fb_get_height(void);
+    unsigned circle_fb_get_pitch(void);
+    void* circle_fb_get_buffer(void);
+}
+
 Window* GUI::s_pGUI;
 int GUI::s_nX, GUI::s_nY;
 
@@ -127,6 +135,9 @@ bool GUI::Start(Window* pGUI_)
         return false;
     }
 
+    // Backup the current framebuffer before entering OSD
+    BackupFramebuffer();
+
     // Set the top level window and clear any last click time
     s_pGUI = pGUI_;
     last_click_time = std::nullopt;
@@ -145,6 +156,9 @@ void GUI::Stop()
         delete s_pGUI;
         s_pGUI = nullptr;
     }
+
+    // Restore the framebuffer after exiting OSD
+    RestoreFramebuffer();
 
     Input::Purge();
 }
@@ -2670,4 +2684,51 @@ void MsgBox::Draw(FrameBuffer& fb)
     {
         fb.DrawString(nX, m_nY + MSGBOX_GAP + (MSGBOX_LINE_HEIGHT * index++), line);
     }
+}
+
+// Initialize static members
+std::unique_ptr<uint8_t[]> GUI::s_framebufferBackup = nullptr;
+size_t GUI::s_backupSize = 0;
+
+void GUI::BackupFramebuffer()
+{
+    // Get framebuffer info from circle_fb
+    void* fb_buffer = circle_fb_get_buffer();
+    unsigned fb_pitch = circle_fb_get_pitch();
+    unsigned fb_height = circle_fb_get_height();
+
+    if (!fb_buffer) return;
+
+    // Calculate size of framebuffer (full screen)
+    s_backupSize = fb_height * fb_pitch;
+
+    // Allocate backup buffer
+    s_framebufferBackup = std::make_unique<uint8_t[]>(s_backupSize);
+
+    // Copy current framebuffer content
+    memcpy(s_framebufferBackup.get(), fb_buffer, s_backupSize);
+}
+
+void GUI::RestoreFramebuffer()
+{
+    if (!s_framebufferBackup || s_backupSize == 0) return;
+
+    // Get current framebuffer info
+    void* fb_buffer = circle_fb_get_buffer();
+    unsigned fb_pitch = circle_fb_get_pitch();
+    unsigned fb_height = circle_fb_get_height();
+
+    if (!fb_buffer) return;
+
+    size_t current_size = fb_height * fb_pitch;
+
+    // Only restore if the framebuffer size matches (avoid corruption from resolution changes)
+    if (current_size == s_backupSize)
+    {
+        memcpy(fb_buffer, s_framebufferBackup.get(), s_backupSize);
+    }
+
+    // Clear backup after restore
+    s_framebufferBackup.reset();
+    s_backupSize = 0;
 }

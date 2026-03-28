@@ -25,13 +25,7 @@
 
 #include "SAASound.h"
 
-#ifdef __circle__
-// PWM audio con DMA: usar 22050 Hz (o 44100 para calidad CD)
-// NOTA: A 8kHz el teorema de Nyquist limita a 4kHz, insuficiente para SAA1099
-constexpr auto SAMPLE_FREQ = 22050;
-#else
-constexpr auto SAMPLE_FREQ = 44100;
-#endif
+constexpr auto SAMPLE_FREQ = 44100;  // Same as upstream
 constexpr auto SAMPLE_BITS = 16;
 constexpr auto SAMPLE_CHANNELS = 2;
 constexpr auto BYTES_PER_SAMPLE = SAMPLE_BITS * SAMPLE_CHANNELS / 8;
@@ -76,9 +70,8 @@ public:
         m_pSAASound = CreateCSAASound();
         m_pSAASound->SetSoundParameters(SAAP_NOFILTER | SAAP_16BIT | SAAP_STEREO);
         m_pSAASound->SetSampleRate(SAMPLE_FREQ);
-        // Use 4x oversampling (2) for quality without killing performance
-        // Default is 6 (64x) which is too slow, 0 has aliasing artifacts
-        m_pSAASound->SetOversample(2);
+        // Oversample: 0=1x, 2=4x, 6=64x
+        m_pSAASound->SetOversample(2);  // 4x — balance quality/performance
         static_assert(SAMPLE_BITS == 16 && SAMPLE_CHANNELS == 2, "SAA parameter mismatch");
     }
 

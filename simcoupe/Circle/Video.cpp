@@ -29,11 +29,16 @@ extern "C" {
     unsigned long long circle_get_clock_ticks64(void);
 }
 
-// ---- Palette: SAM hardware → GPU hardware palette -----------------------
-// Only update if palette actually changed (avoids full-screen flash).
+// ---- Palette handling (platform-dependent) ------------------------------
 
+#if RASPPI >= 4
+// Pi 4: 32-bit FB — software palette LUT
+static uint32_t s_palette32[256] = {};
+#else
+// Pi 2/3: 8-bit FB — hardware palette via GPU
 struct PalEntry { uint8_t r, g, b; };
 static PalEntry s_prev_pal[256] = {};
+#endif
 static bool s_pal_inited = false;
 
 static void BuildPalette()
@@ -44,6 +49,10 @@ static void BuildPalette()
     for (int i = 0; i < 256; i++)
     {
         auto& c = hw[i % NUM_PALETTE_COLOURS];
+#if RASPPI >= 4
+        s_palette32[i] = (0xFFu << 24) | ((uint32_t)c.red << 16)
+                        | ((uint32_t)c.green << 8) | c.blue;
+#else
         if (!s_pal_inited ||
             s_prev_pal[i].r != c.red ||
             s_prev_pal[i].g != c.green ||
@@ -53,12 +62,14 @@ static void BuildPalette()
             s_prev_pal[i] = { c.red, c.green, c.blue };
             changed = true;
         }
+#endif
     }
 
-    if (changed) {
+#if RASPPI < 4
+    if (changed)
         circle_fb_update_palette();
-        s_pal_inited = true;
-    }
+#endif
+    s_pal_inited = true;
 }
 
 // ---- CircleVideo: IVideoBase implementation -----------------------------
@@ -88,7 +99,7 @@ public:
     }
 
     void ResizeWindow(int /*height*/) const override {}
-    std::pair<int, int> MouseRelative() override { return { 0, 0 }; }
+    std::pair<int, int> MouseRelative() override;  // defined below class
     void OptionsChanged() override {}
 
     void Update(const FrameBuffer& fb) override
@@ -129,25 +140,19 @@ public:
             s_xtab_sw = src_w;
         }
 
-        // Clear borders once
-        static bool s_borders_cleared = false;
-        if (!s_borders_cleared) {
+        // 32-bit blit with dirty-line detection.
+        // Convert 8-bit palette indices to 32-bit ARGB via s_palette32[] LUT.
+        static uint8_t s_prev_lines[640][640];
+        static int s_prev_src_w = 0;
+        static int s_prev_src_h = 0;
+
+        if (src_w != s_prev_src_w || src_h != s_prev_src_h) {
             memset(fbuf, 0, fb_h * pitch);
-            s_borders_cleared = true;
+            memset(s_prev_lines[0], 0xFF, src_h * sizeof(s_prev_lines[0]));
+            s_prev_src_w = src_w;
         }
 
-        // 8-bit blit with dirty-line detection.
-        // Only write lines whose source changed since last frame.
-        // This dramatically reduces uncached GPU writes for static screens.
-        static uint8_t s_prev_lines[512][544];  // max src_h × src_w
-        static int s_prev_src_h = 0;
         if (src_h > s_prev_src_h) {
-            // src_h grew (e.g. game → GUI: 208 → 416). The rows from
-            // s_prev_src_h to src_h-1 were never written into s_prev_lines,
-            // so they contain zeros/garbage and will falsely compare as
-            // "clean" against the new pGuiScreen rows — causing the bottom
-            // half of the screen to not be redrawn.
-            // Invalidate only the new rows so they are forced dirty this frame.
             memset(s_prev_lines[s_prev_src_h], 0xFF,
                    (src_h - s_prev_src_h) * sizeof(s_prev_lines[0]));
         }
@@ -158,22 +163,24 @@ public:
         {
             auto pLine = fb.GetLine(sy);
 
-            // Check if this source line changed
             bool dirty = (memcmp(s_prev_lines[sy], pLine, src_w) != 0);
             if (!dirty) continue;
 
-            // Cache new line for next comparison
             memcpy(s_prev_lines[sy], pLine, src_w);
 
-            // Write all destination rows that map to this source line
-            // (with nearest-neighbor scaling, multiple dst rows may map to same src)
             for (int dy = sy * dst_h / src_h;
                  dy < (sy + 1) * dst_h / src_h && dy < dst_h;
                  dy++)
             {
+#if RASPPI >= 4
+                uint32_t *row = (uint32_t *)(fb8 + (off_y + dy) * pitch) + off_x;
+                for (int dx = 0; dx < dst_w; dx++)
+                    row[dx] = s_palette32[pLine[s_xtab[dx]]];
+#else
                 uint8_t *row = fb8 + (off_y + dy) * pitch + off_x;
                 for (int dx = 0; dx < dst_w; dx++)
                     row[dx] = pLine[s_xtab[dx]];
+#endif
             }
         }
 
@@ -186,6 +193,15 @@ private:
     unsigned m_fb_w = 0;
     unsigned m_fb_h = 0;
 };
+
+extern "C" void circle_mouse_get_delta(int *dx, int *dy);
+
+std::pair<int, int> CircleVideo::MouseRelative()
+{
+    int dx = 0, dy = 0;
+    circle_mouse_get_delta(&dx, &dy);
+    return { dx, dy };
+}
 
 // Factory function called from UI::CreateVideo()
 std::unique_ptr<IVideoBase> CreateCircleVideo()

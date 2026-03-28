@@ -33,7 +33,7 @@ struct GUI_ICON
 // These are the icons currently available
 extern const GUI_ICON sMouseCursor;
 extern const GUI_ICON sSamIcon;
-extern const GUI_ICON sChipIcon, sSoundIcon, sDisplayIcon, sKeyboardIcon, sMouseIcon;
+extern const GUI_ICON sChipIcon, sSoundIcon, sDisplayIcon, sKeyboardIcon, sMouseIcon, sJoystickIcon;
 extern const GUI_ICON sHardwareIcon, sMidiIcon, sPortIcon, sFloppyDriveIcon, sHardDiskIcon;
 extern const GUI_ICON sMiscIcon, sFolderIcon, sDocumentIcon, sDiskIcon, sCompressedIcon;
 extern const GUI_ICON sInformationIcon, sWarningIcon, sErrorIcon;

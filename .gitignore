@@ -1,5 +1,10 @@
 # Build directories
 build/
+build-pi2/
+build-pi4/
+
+# Release packages
+release/
 
 # Circle kernel build artefacts
 kernel/*.o
@@ -15,3 +20,9 @@ test/
 # Python cache
 __pycache__/
 *.pyc
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
+sd-backup/
+sd-backup/
