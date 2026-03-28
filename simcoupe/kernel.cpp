@@ -33,6 +33,9 @@ extern "C" void circle_audio_poll(void);
 extern "C" int  fatfs_mount(void);
 extern "C" int  circle_fb_init(unsigned w, unsigned h, unsigned depth);
 extern "C" void *circle_fb_get_screen_device(void);
+extern "C" void *circle_fb_get_buffer(void);
+extern "C" unsigned circle_fb_get_pitch(void);
+extern "C" unsigned circle_fb_get_height(void);
 
 namespace Main { bool Init(int argc, char *argv[]); void Exit(); }
 namespace CPU  { void Run(); void Exit(); }
@@ -333,6 +336,12 @@ void CKernel::Run(unsigned nCore)
             CPU::Run();
 
         Main::Exit();
+
+        // Clear screen to black on exit
+        void *fb = circle_fb_get_buffer();
+        if (fb)
+            memset(fb, 0, circle_fb_get_pitch() * circle_fb_get_height());
+
         while (true) asm volatile("wfe");
     }
     else if (nCore == 2)
