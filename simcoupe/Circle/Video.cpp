@@ -29,23 +29,46 @@ extern "C" {
     unsigned long long circle_get_clock_ticks64(void);
 }
 
-// ---- Palette: SAM hardware → 32-bit ARGB lookup table ------------------
-// With CScreenDevice (32-bit FB), we can't use HW palette. Convert on CPU.
+// ---- Palette handling (platform-dependent) ------------------------------
 
+#if RASPPI >= 4
+// Pi 4: 32-bit FB — software palette LUT
 static uint32_t s_palette32[256] = {};
+#else
+// Pi 2/3: 8-bit FB — hardware palette via GPU
+struct PalEntry { uint8_t r, g, b; };
+static PalEntry s_prev_pal[256] = {};
+#endif
 static bool s_pal_inited = false;
 
 static void BuildPalette()
 {
     auto hw = IO::Palette();
+    bool changed = false;
 
     for (int i = 0; i < 256; i++)
     {
         auto& c = hw[i % NUM_PALETTE_COLOURS];
-        // ARGB format: 0xFFRRGGBB
+#if RASPPI >= 4
         s_palette32[i] = (0xFFu << 24) | ((uint32_t)c.red << 16)
                         | ((uint32_t)c.green << 8) | c.blue;
+#else
+        if (!s_pal_inited ||
+            s_prev_pal[i].r != c.red ||
+            s_prev_pal[i].g != c.green ||
+            s_prev_pal[i].b != c.blue)
+        {
+            circle_fb_set_palette(i, c.red, c.green, c.blue);
+            s_prev_pal[i] = { c.red, c.green, c.blue };
+            changed = true;
+        }
+#endif
     }
+
+#if RASPPI < 4
+    if (changed)
+        circle_fb_update_palette();
+#endif
     s_pal_inited = true;
 }
 
@@ -149,9 +172,15 @@ public:
                  dy < (sy + 1) * dst_h / src_h && dy < dst_h;
                  dy++)
             {
+#if RASPPI >= 4
                 uint32_t *row = (uint32_t *)(fb8 + (off_y + dy) * pitch) + off_x;
                 for (int dx = 0; dx < dst_w; dx++)
                     row[dx] = s_palette32[pLine[s_xtab[dx]]];
+#else
+                uint8_t *row = fb8 + (off_y + dy) * pitch + off_x;
+                for (int dx = 0; dx < dst_w; dx++)
+                    row[dx] = pLine[s_xtab[dx]];
+#endif
             }
         }
 

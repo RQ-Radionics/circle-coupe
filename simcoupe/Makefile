@@ -133,6 +133,7 @@ circle-libs:
 		$(MAKE) -C $(CIRCLEHOME)/lib/fs       RASPPI=$(RASPPI) clean; \
 		$(MAKE) -C $(CIRCLEHOME)/addon/fatfs  RASPPI=$(RASPPI) clean; \
 		$(MAKE) -C $(CIRCLEHOME)/addon/SDCard RASPPI=$(RASPPI) clean; \
+		$(MAKE) -C $(CIRCLEHOME)/addon/linux     RASPPI=$(RASPPI) clean; \
 		$(MAKE) -C $(CIRCLEHOME)/addon/vc4/vchiq RASPPI=$(RASPPI) clean; \
 		$(MAKE) -C $(CIRCLEHOME)/addon/vc4/sound RASPPI=$(RASPPI) clean; \
 		rm -f *.o syscalls.o; \

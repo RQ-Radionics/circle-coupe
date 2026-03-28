@@ -49,17 +49,28 @@ int circle_fb_init(unsigned w, unsigned h, unsigned depth)
         s_pFrameBuffer = nullptr;
     }
 
-    /* CScreenDevice creates framebuffer that survives VCHIQ init on Pi 4.
-     * We use its framebuffer directly (32-bit) — no separate 8-bit buffer. */
-    (void)depth;  // ignored — CScreenDevice uses DEPTH (32)
+#if RASPPI >= 4
+    /* Pi 4/400: CScreenDevice anchors HDMI — survives VCHIQ init.
+     * Uses 32-bit framebuffer (DEPTH=32). */
+    (void)depth;
     s_pScreen = new CScreenDevice(w, h);
     if (!s_pScreen->Initialize()) {
         delete s_pScreen;
         s_pScreen = nullptr;
         return -1;
     }
-
     s_pFrameBuffer = s_pScreen->GetFrameBuffer();
+#else
+    /* Pi 2/3: direct CBcmFrameBuffer — less memory, 8-bit palette mode.
+     * VCHIQ doesn't kill the framebuffer on these platforms. */
+    (void)depth;  // use 8-bit for palette
+    s_pFrameBuffer = new CBcmFrameBuffer(w, h, 8);
+    if (!s_pFrameBuffer->Initialize()) {
+        delete s_pFrameBuffer;
+        s_pFrameBuffer = nullptr;
+        return -1;
+    }
+#endif
 
     s_width  = s_pFrameBuffer->GetWidth();
     s_height = s_pFrameBuffer->GetHeight();
@@ -71,11 +82,18 @@ int circle_fb_init(unsigned w, unsigned h, unsigned depth)
 
 void circle_fb_quit(void)
 {
+#if RASPPI >= 4
     s_pFrameBuffer = nullptr;  // owned by CScreenDevice
     if (s_pScreen) {
         delete s_pScreen;
         s_pScreen = nullptr;
     }
+#else
+    if (s_pFrameBuffer) {
+        delete s_pFrameBuffer;
+        s_pFrameBuffer = nullptr;
+    }
+#endif
     s_width = s_height = s_pitch = 0;
 }
 
