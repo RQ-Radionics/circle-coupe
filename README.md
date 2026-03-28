@@ -55,7 +55,7 @@ Core 2 (emulator)         Ring Buffer          Core 0 (poll)           GPU
 - **Toolchain**: `arm-none-eabi-gcc` (ARM cross-compiler)
 - **Build tools**: CMake 3.16+, GNU Make
 - **SD Card**: FAT32 formatted, 512MB+ recommended
-- **SAM Coupé ROM**: `samcoupe.rom` (not included)
+- **SAM Coupé ROM**: `samcoupe.rom` (included in `simcoupe/Resource/`)
 
 ### Installing the toolchain
 
@@ -90,29 +90,29 @@ sudo apt install gcc-arm-none-eabi cmake make
 
 ## SD Card Setup
 
-Copy the following files to a FAT32 SD card:
+Format your SD card as FAT32 and copy **all** of the following files to the root. Without the firmware files the Pi will not boot.
 
-```
-/
-├── bootcode.bin           # RPi bootloader (Pi 2B/3B)
-├── start.elf              # GPU firmware (Pi 2B/3B)
-├── start4.elf             # GPU firmware (Pi 4B/400)
-├── fixup.dat              # Memory fixup (Pi 2B/3B)
-├── fixup4.dat             # Memory fixup (Pi 4B/400)
-├── armstub7-rpi4.bin      # ARM stub (Pi 4B/400)
-├── bcm2711-rpi-4-b.dtb    # Device tree (Pi 4B)
-├── bcm2711-rpi-400.dtb    # Device tree (Pi 400)
-├── config.txt             # Boot configuration
-├── cmdline.txt            # Kernel parameters (optional)
-├── kernel7.img            # Kernel Pi 2B
-├── kernel8-32.img         # Kernel Pi 3B
-├── kernel7l.img           # Kernel Pi 4B/400
-└── simcoupe/
-    ├── samcoupe.rom       # SAM Coupé ROM (required)
-    └── *.dsk              # Disk images (optional)
-```
+| File | Source | Required |
+|------|--------|----------|
+| `bootcode.bin` | `circle/boot/` | Pi 2B/3B |
+| `start.elf` | `circle/boot/` | Pi 2B/3B |
+| `start4.elf` | `circle/boot/` | Pi 4B/400 |
+| `fixup.dat` | `circle/boot/` | Pi 2B/3B |
+| `fixup4.dat` | `circle/boot/` | Pi 4B/400 |
+| `armstub7-rpi4.bin` | `circle/boot/` | Pi 4B/400 |
+| `bcm2711-rpi-4-b.dtb` | `circle/boot/` | Pi 4B |
+| `bcm2711-rpi-400.dtb` | `circle/boot/` | Pi 400 |
+| `config.txt` | `simcoupe/sdcard/` | All |
+| `cmdline.txt` | `simcoupe/sdcard/` | Optional |
+| `kernel7.img` | `simcoupe/` | Pi 2B |
+| `kernel8-32.img` | `simcoupe/` | Pi 3B |
+| `kernel7l.img` | `simcoupe/` | Pi 4B/400 |
+| `simcoupe/samcoupe.rom` | `simcoupe/Resource/` | All |
+| `simcoupe/*.dsk` | your collection | Optional |
 
-The Pi firmware auto-selects the correct kernel based on the board.
+The Pi firmware auto-selects the correct kernel based on the board. You can place all three kernel files on the same SD card.
+
+The easiest way to set up the SD card is to use `./build.sh release` which creates a ready-to-use ZIP file.
 
 ### config.txt
 
@@ -147,7 +147,14 @@ If `cmdline.txt` is empty or absent, audio destination is auto-detected.
 | USB Keyboard   | SAM Coupé keyboard           |
 | USB Mouse      | SAM Coupé mouse              |
 | USB Gamepad    | Joystick 1/2                 |
-| F1             | Insert disk                  |
+
+### Function Keys
+
+| Key            | Function                     |
+|----------------|------------------------------|
+| F1             | Insert disk (drive 1)        |
+| F2             | Insert disk (drive 2)        |
+| F9             | Debugger                     |
 | F10            | Options menu                 |
 | F12            | Reset                        |
 | Shift+F12      | Exit (screen goes black)     |
@@ -155,25 +162,25 @@ If `cmdline.txt` is empty or absent, audio destination is auto-detected.
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Raspberry Pi                          │
-├──────────────┬──────────────────┬────────────────────────┤
-│  Core 0      │  Core 1          │  Core 2                │
-│  ──────      │  ──────          │  ──────                │
-│  USB HCI     │  Z80 Emulation   │  Audio Synthesis       │
-│  Scheduler   │  Video Rendering │  SAA1099 + DAC + SID   │
-│  KB/Mouse/GP │  Frame Update    │  Sound::FrameUpdate()  │
-│  VCHIQ Poll  │                  │  Ring Buffer Write     │
-├──────────────┴──────────────────┴────────────────────────┤
-│  Circle Framework + Multicore-safe Linux Compat Layer    │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │
-│  │VCHIQSound│ │CScreenDev│ │CEMMCDev  │ │CUSBHCIDev│   │
-│  │(Audio)   │ │(Pi4 FB)  │ │(SD Card) │ │(USB)     │   │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘   │
-├─────────────────────────────────────────────────────────┤
-│  Hardware: HDMI/Jack Audio │ HDMI Video │ SD Card │ USB │
-└─────────────────────────────────────────────────────────┘
+```text
++-----------------------------------------------------------+
+|                      Raspberry Pi                         |
++------------------+------------------+---------------------+
+|  Core 0          |  Core 1          |  Core 2             |
+|                  |                  |                     |
+|  USB HCI         |  Z80 Emulation   |  Audio Synthesis    |
+|  Scheduler       |  Video Rendering |  SAA1099 + DAC +SID |
+|  KB/Mouse/Gamepad|  Frame Update    |  Sound::FrameUpdate |
+|  VCHIQ Audio Poll|                  |  Ring Buffer Write  |
++------------------+------------------+---------------------+
+|  Circle Framework + Multicore-safe Linux Compat Layer     |
+|                                                           |
+|  VCHIQSound   CScreenDevice   CEMMCDevice   CUSBHCIDevice |
+|  (Audio)      (Pi4 Video)     (SD Card)     (USB)         |
++-----------------------------------------------------------+
+|  Hardware                                                 |
+|  HDMI/Jack Audio  |  HDMI Video  |  SD Card  |  USB      |
++-----------------------------------------------------------+
 ```
 
 ### Key Implementation Details
