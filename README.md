@@ -108,6 +108,9 @@ Format your SD card as FAT32 and copy **all** of the following files to the root
 | `kernel8-32.img` | `simcoupe/` | Pi 3B |
 | `kernel7l.img` | `simcoupe/` | Pi 4B/400 |
 | `simcoupe/samcoupe.rom` | `simcoupe/Resource/` | All |
+| `simcoupe/atom.rom` | `simcoupe/Resource/` | Optional |
+| `simcoupe/atomlite.rom` | `simcoupe/Resource/` | Optional |
+| `simcoupe/sp0256-al2.bin` | `simcoupe/Resource/` | Optional |
 | `simcoupe/*.dsk` | your collection | Optional |
 
 The Pi firmware auto-selects the correct kernel based on the board. You can place all three kernel files on the same SD card.
@@ -175,8 +178,8 @@ If `cmdline.txt` is empty or absent, audio destination is auto-detected.
 +------------------+------------------+---------------------+
 |  Circle Framework + Multicore-safe Linux Compat Layer     |
 |                                                           |
-|  VCHIQSound   CScreenDevice   CEMMCDevice   CUSBHCIDevice |
-|  (Audio)      (Pi4 Video)     (SD Card)     (USB)         |
+|  VCHIQSound   CScreenDevice   CEMMCDevice   CUSBHCIDevice  |
+|  (Audio)      (Pi4 Video)     (SD Card)     (USB)          |
 +-----------------------------------------------------------+
 |  Hardware                                                 |
 |  HDMI/Jack Audio  |  HDMI Video  |  SD Card  |  USB      |
