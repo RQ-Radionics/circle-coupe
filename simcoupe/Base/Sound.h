@@ -25,13 +25,7 @@
 
 #include "SAASound.h"
 
-#ifdef __circle__
-// PWM audio con DMA: usar 22050 Hz (o 44100 para calidad CD)
-// NOTA: A 8kHz el teorema de Nyquist limita a 4kHz, insuficiente para SAA1099
-constexpr auto SAMPLE_FREQ = 22050;
-#else
-constexpr auto SAMPLE_FREQ = 44100;
-#endif
+constexpr auto SAMPLE_FREQ = 44100;  // Same as upstream
 constexpr auto SAMPLE_BITS = 16;
 constexpr auto SAMPLE_CHANNELS = 2;
 constexpr auto BYTES_PER_SAMPLE = SAMPLE_BITS * SAMPLE_CHANNELS / 8;

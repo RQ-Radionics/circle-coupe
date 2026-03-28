@@ -16,7 +16,7 @@ static CInterruptSystem  *s_pInterrupt = nullptr;
 static volatile bool      s_active     = false;
 
 // Ring buffer for Core 2 → Core 0 audio transfer (VCHIQ needs Core 0's scheduler)
-#define AUDIO_RING_SIZE (22050 * 2 * 4)  // ~2s stereo s16 — large to avoid drops
+#define AUDIO_RING_SIZE (44100 * 2 * 2)  // ~1s stereo s16
 static s16  s_ring[AUDIO_RING_SIZE];
 static volatile unsigned s_ring_wr = 0;
 static volatile unsigned s_ring_rd = 0;
@@ -111,9 +111,9 @@ extern "C" void circle_audio_poll(void)
     if (avail == 0) return;
 
     // Send ONE chunk per poll — steady drip, prevents burst→drain cycle
-    unsigned nChunk = avail > 882 ? 882 : avail;  // ~1 frame of stereo audio
+    unsigned nChunk = avail > 1764 ? 1764 : avail;  // ~1 frame of stereo audio @ 44100
 
-    s16 tmp[882];
+    s16 tmp[1764];
     for (unsigned i = 0; i < nChunk; i++)
         tmp[i] = s_ring[(rd + i) % AUDIO_RING_SIZE];
 

@@ -20,7 +20,7 @@
 // Audio configuration: sample rate and chunk size
 // Circle PWM DMA requires minimum chunk size (typically 128+ samples)
 // Using 512 as safe default, sample rate at 22050 for better quality than 8k
-constexpr unsigned SAMPLE_RATE = 22050;
+constexpr unsigned SAMPLE_RATE = 44100;
 constexpr unsigned CHUNK_SIZE  = 512;  // Safe DMA size (~23ms @ 22050Hz)
 
 extern "C" void circle_audio_set_interrupt(void *pInterrupt);
