@@ -76,12 +76,8 @@ public:
         m_pSAASound = CreateCSAASound();
         m_pSAASound->SetSoundParameters(SAAP_NOFILTER | SAAP_16BIT | SAAP_STEREO);
         m_pSAASound->SetSampleRate(SAMPLE_FREQ);
-        // Oversample: 0=1x, 2=4x, 6=64x. Pi 4 can handle 64x, Pi 2/3 use 4x
-#if RASPPI >= 4
-        m_pSAASound->SetOversample(6);  // 64x — best quality
-#else
+        // Oversample: 0=1x, 2=4x, 6=64x
         m_pSAASound->SetOversample(2);  // 4x — balance quality/performance
-#endif
         static_assert(SAMPLE_BITS == 16 && SAMPLE_CHANNELS == 2, "SAA parameter mismatch");
     }
 

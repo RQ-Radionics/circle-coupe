@@ -92,10 +92,55 @@ void Sound::FrameUpdate()
 
     // Copy in the DAC samples, then mix SAA and possibly SID too
     // SAA is attenuated by 6dB (~50%) to prevent clipping on high polyphony
+    // Fill buffer with last known sample when source is inactive (avoids DC clicks)
+    static int16_t s_lastDAC[2] = {};    // L, R
+    static int16_t s_lastSAA[2] = {};
+    static int16_t s_lastSID[2] = {};
+    static int16_t s_lastVBox[2] = {};
+
     memcpy(pbSampleBuffer, pDAC->GetSampleBuffer(), nSize);
-    if (fSaaUsed) MixAudio(pbSampleBuffer, pSAA->GetSampleBuffer(), nSize, 6);  // -6dB attenuation
-    if (fSidUsed && GetOption(sid)) MixAudio(pbSampleBuffer, pSID->GetSampleBuffer(), nSize);
-    if (sp0256_used && GetOption(voicebox)) MixAudio(pbSampleBuffer, pVoiceBox->GetSampleBuffer(), nSize);
+    // Save last DAC sample
+    if (nSize >= 4) {
+        auto *p = (int16_t *)(pbSampleBuffer + nSize - 4);
+        s_lastDAC[0] = p[0]; s_lastDAC[1] = p[1];
+    }
+
+    if (fSaaUsed) {
+        MixAudio(pbSampleBuffer, pSAA->GetSampleBuffer(), nSize, 6);
+        auto *p = (const int16_t *)(pSAA->GetSampleBuffer() + nSize - 4);
+        s_lastSAA[0] = p[0]; s_lastSAA[1] = p[1];
+    } else if (s_lastSAA[0] || s_lastSAA[1]) {
+        // Hold last sample to avoid click on transition
+        auto *dst = (int16_t *)pbSampleBuffer;
+        for (int i = 0; i < nSamples; i++) {
+            dst[i * 2]     += (s_lastSAA[0] / 2);  // -6dB like MixAudio
+            dst[i * 2 + 1] += (s_lastSAA[1] / 2);
+        }
+    }
+
+    if (fSidUsed && GetOption(sid)) {
+        MixAudio(pbSampleBuffer, pSID->GetSampleBuffer(), nSize);
+        auto *p = (const int16_t *)(pSID->GetSampleBuffer() + nSize - 4);
+        s_lastSID[0] = p[0]; s_lastSID[1] = p[1];
+    } else if (s_lastSID[0] || s_lastSID[1]) {
+        auto *dst = (int16_t *)pbSampleBuffer;
+        for (int i = 0; i < nSamples; i++) {
+            dst[i * 2]     += (s_lastSID[0] / 2);
+            dst[i * 2 + 1] += (s_lastSID[1] / 2);
+        }
+    }
+
+    if (sp0256_used && GetOption(voicebox)) {
+        MixAudio(pbSampleBuffer, pVoiceBox->GetSampleBuffer(), nSize);
+        auto *p = (const int16_t *)(pVoiceBox->GetSampleBuffer() + nSize - 4);
+        s_lastVBox[0] = p[0]; s_lastVBox[1] = p[1];
+    } else if (s_lastVBox[0] || s_lastVBox[1]) {
+        auto *dst = (int16_t *)pbSampleBuffer;
+        for (int i = 0; i < nSamples; i++) {
+            dst[i * 2]     += (s_lastVBox[0] / 2);
+            dst[i * 2 + 1] += (s_lastVBox[1] / 2);
+        }
+    }
 
     // Add the frame to any recordings
     WAV::AddFrame(pbSampleBuffer, nSize);

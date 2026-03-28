@@ -104,38 +104,29 @@ extern "C" void circle_audio_poll(void)
 
     unsigned buffered = s_pVCHIQ->GetBytesBuffered();
     if (rd == wr) return;  // ring empty
-    if (buffered > 8192) return;  // flow control
+    if (buffered > 4096) return;  // flow control: keep GPU fed but not overfull
 
     unsigned avail = (wr >= rd) ? (wr - rd) : (AUDIO_RING_SIZE - rd + wr);
     avail &= ~1u;  // stereo alignment
     if (avail == 0) return;
 
-    // Send in chunks of 1024 (VCHIQ chunk size), send multiple per poll
-    unsigned totalSent = 0;
-    while (avail > 0) {
-        unsigned nChunk = avail > 1024 ? 1024 : avail;
+    // Send ONE chunk per poll — steady drip, prevents burst→drain cycle
+    unsigned nChunk = avail > 882 ? 882 : avail;  // ~1 frame of stereo audio
 
-        s16 tmp[1024];
-        for (unsigned i = 0; i < nChunk; i++)
-            tmp[i] = s_ring[(rd + i) % AUDIO_RING_SIZE];
+    s16 tmp[882];
+    for (unsigned i = 0; i < nChunk; i++)
+        tmp[i] = s_ring[(rd + i) % AUDIO_RING_SIZE];
 
-        int sent = s_pVCHIQ->WriteSamples(tmp, nChunk);
-        if (sent <= 0) break;
-
-        rd = (rd + sent) % AUDIO_RING_SIZE;
-        avail -= sent;
-        totalSent += sent;
-    }
-
-    if (totalSent > 0) {
+    int sent = s_pVCHIQ->WriteSamples(tmp, nChunk);
+    if (sent > 0) {
         asm volatile("dmb" ::: "memory");
-        s_ring_rd = rd;
+        s_ring_rd = (rd + sent) % AUDIO_RING_SIZE;
     }
-    s_poll_last_sent = totalSent;
+    s_poll_last_sent = sent;
 
     if ((s_poll_count & 0x3F) == 1)
         snprintf(g_audio_status_buf, sizeof g_audio_status_buf,
-                 "s%u d%u", totalSent, s_ring_drops);
+                 "s%d b%u d%u", sent, buffered, s_ring_drops);
 }
 
 extern "C" void circle_audio_activate(void *pDevice)
