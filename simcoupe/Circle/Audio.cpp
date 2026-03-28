@@ -102,15 +102,16 @@ extern "C" void circle_audio_poll(void)
     unsigned wr = s_ring_wr;
     asm volatile("dmb" ::: "memory");
 
-    if (rd == wr) return;  // ring empty — nothing to send
+    // Flow control: don't send if GPU has enough buffered (like BMC64)
+    unsigned buffered = s_pVCHIQ->GetBytesBuffered();
+    if (rd == wr) return;  // ring empty — GPU plays what it has
+
+    // Don't overfeed: max ~8KB buffered in GPU (~90ms at 22050Hz stereo)
+    if (buffered > 8192) return;
 
     unsigned avail = (wr >= rd) ? (wr - rd) : (AUDIO_RING_SIZE - rd + wr);
-
-    // Ensure stereo alignment (always send even number of s16 = complete L+R pairs)
-    avail &= ~1u;
+    avail &= ~1u;  // stereo alignment
     if (avail == 0) return;
-
-    // Note: no throttle here — VCHIQ handles backpressure via vchi_msg_queue blocking
 
     // Send in chunks of 1024 (VCHIQ chunk size), send multiple per poll
     unsigned totalSent = 0;

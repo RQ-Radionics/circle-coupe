@@ -38,6 +38,7 @@ public:
     int GetState() const { return (int)m_State; }
     unsigned GetWritePos() const { return m_nWritePos; }
     unsigned GetCompletePos() const { return m_nCompletePos; }
+    unsigned GetBytesBuffered() const { return m_nBytesBuffered; }
 
     // Push audio data directly to VC4 (called from any core)
     int WriteSamples(const s16 *pBuffer, unsigned nSamples);
@@ -64,4 +65,5 @@ private:
 
     unsigned m_nWritePos;
     unsigned m_nCompletePos;
+    volatile unsigned m_nBytesBuffered;
 };

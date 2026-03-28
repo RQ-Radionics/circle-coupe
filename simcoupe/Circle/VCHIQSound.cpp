@@ -22,7 +22,8 @@ VCHIQSound::VCHIQSound(CVCHIQDevice *pVCHIQDevice,
       m_VCHIInstance(0),
       m_hService(0),
       m_nWritePos(0),
-      m_nCompletePos(0)
+      m_nCompletePos(0),
+      m_nBytesBuffered(0)
 {
 }
 
@@ -284,7 +285,8 @@ void VCHIQSound::Callback(const VCHI_CALLBACK_REASON_T Reason, void *hMessage)
     case VC_AUDIO_MSG_TYPE_COMPLETE:
         if (m_State >= VCHIQSoundRunning) {
             m_nCompletePos += Msg.u.complete.count & 0x3FFFFFFF;
-            if (m_nWritePos - m_nCompletePos == 0 && m_State == VCHIQSoundCancelled)
+            m_nBytesBuffered = m_nWritePos - m_nCompletePos;
+            if (m_nBytesBuffered == 0 && m_State == VCHIQSoundCancelled)
                 m_State = VCHIQSoundTerminating;
         }
         break;
