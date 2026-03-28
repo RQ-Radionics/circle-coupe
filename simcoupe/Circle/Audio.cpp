@@ -102,12 +102,9 @@ extern "C" void circle_audio_poll(void)
     unsigned wr = s_ring_wr;
     asm volatile("dmb" ::: "memory");
 
-    // Flow control: don't send if GPU has enough buffered (like BMC64)
     unsigned buffered = s_pVCHIQ->GetBytesBuffered();
-    if (rd == wr) return;  // ring empty — GPU plays what it has
-
-    // Don't overfeed: max ~8KB buffered in GPU (~90ms at 22050Hz stereo)
-    if (buffered > 8192) return;
+    if (rd == wr) return;  // ring empty
+    if (buffered > 8192) return;  // flow control
 
     unsigned avail = (wr >= rd) ? (wr - rd) : (AUDIO_RING_SIZE - rd + wr);
     avail &= ~1u;  // stereo alignment
