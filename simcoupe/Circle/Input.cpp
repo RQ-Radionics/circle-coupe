@@ -16,7 +16,9 @@
 #include "SimCoupe.h"
 #include "Input.h"
 #include "Actions.h"
+#include "Frame.h"
 #include "GUI.h"
+#include "GUIDlg.h"
 #include "Joystick.h"
 #include "Keyboard.h"
 #include "Keyin.h"
@@ -53,6 +55,11 @@ static volatile bool s_mouse_acquired = false;
 // Accumulated mouse delta (consumed by Video::MouseRelative via GetMouseDelta)
 static volatile int s_mouse_accum_dx = 0;
 static volatile int s_mouse_accum_dy = 0;
+
+// GUI cursor position (absolute, in SAM screen coordinates)
+static int s_cursor_x = 0;
+static int s_cursor_y = 0;
+static bool s_cursor_inited = false;
 
 // ---- Ring buffer for gamepad events (IRQ-safe: one writer, one reader) ---
 
@@ -309,7 +316,7 @@ void Input::Update()
 
     if (mouse_events)
     {
-        // Accumulate for Video::MouseRelative() (GUI cursor)
+        // Accumulate for Video::MouseRelative()
         s_mouse_accum_dx += mouse_dx;
         s_mouse_accum_dy += mouse_dy;
 
@@ -317,15 +324,48 @@ void Input::Update()
         if (!s_mouse_acquired && (mouse_dx || mouse_dy))
             s_mouse_acquired = true;
 
-        // Feed to SAM mouse emulation (scale down — USB mice are much higher DPI than SAM)
-        if (pMouse)
+        if (GUI::IsActive())
         {
-            if (mouse_dx || mouse_dy)
-                pMouse->Move(mouse_dx / 4, -mouse_dy / 4);  // Y inverted for SAM
+            // GUI mode: track absolute cursor position, send GUI messages
+            if (!s_cursor_inited) {
+                s_cursor_x = Frame::Width() / 2;
+                s_cursor_y = Frame::Height() / 2;
+                s_cursor_inited = true;
+            }
 
-            pMouse->SetButton(1, (mouse_buttons & 0x01) != 0);  // left
-            pMouse->SetButton(2, (mouse_buttons & 0x02) != 0);  // right
-            pMouse->SetButton(3, (mouse_buttons & 0x04) != 0);  // middle
+            s_cursor_x += mouse_dx / 2;
+            s_cursor_y += mouse_dy / 2;
+
+            // Clamp to screen
+            if (s_cursor_x < 0) s_cursor_x = 0;
+            if (s_cursor_y < 0) s_cursor_y = 0;
+            if (s_cursor_x >= Frame::Width()) s_cursor_x = Frame::Width() - 1;
+            if (s_cursor_y >= Frame::Height()) s_cursor_y = Frame::Height() - 1;
+
+            if (mouse_dx || mouse_dy)
+                GUI::SendMessage(GM_MOUSEMOVE, s_cursor_x, s_cursor_y);
+
+            // Button events with current cursor position
+            static unsigned s_prev_buttons = 0;
+            if ((mouse_buttons & 0x01) && !(s_prev_buttons & 0x01))
+                GUI::SendMessage(GM_BUTTONDOWN, s_cursor_x, s_cursor_y);
+            if (!(mouse_buttons & 0x01) && (s_prev_buttons & 0x01))
+                GUI::SendMessage(GM_BUTTONUP, s_cursor_x, s_cursor_y);
+            s_prev_buttons = mouse_buttons;
+        }
+        else
+        {
+            // Emulation mode: feed SAM mouse (scaled down for DPI)
+            if (pMouse)
+            {
+                if (mouse_dx || mouse_dy)
+                    pMouse->Move(mouse_dx / 4, -mouse_dy / 4);
+
+                pMouse->SetButton(1, (mouse_buttons & 0x01) != 0);
+                pMouse->SetButton(2, (mouse_buttons & 0x02) != 0);
+                pMouse->SetButton(3, (mouse_buttons & 0x04) != 0);
+            }
+            s_cursor_inited = false;  // reset for next GUI entry
         }
     }
 
