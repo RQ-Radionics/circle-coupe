@@ -182,7 +182,7 @@ If `cmdline.txt` is empty or absent, audio destination is auto-detected.
 |  (Audio)      (Pi4 Video)     (SD Card)     (USB)          |
 +-----------------------------------------------------------+
 |  Hardware                                                 |
-|  HDMI/Jack Audio  |  HDMI Video  |  SD Card  |  USB      |
+|  HDMI/Jack Audio  |  HDMI Video  |  SD Card  |  USB       |
 +-----------------------------------------------------------+
 ```
 
