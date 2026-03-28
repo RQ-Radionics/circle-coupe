@@ -152,13 +152,17 @@ boolean CKernel::Initialize()
 
     circle_audio_set_interrupt(&m_Interrupt);
 
-    // All audio goes through VCHIQ — destination selected by sounddev= in cmdline.txt
-    // sounddev=hdmi → HDMI (Pi 400, or any Pi with HDMI audio)
-    // anything else → headphones (Pi 2/3 analog jack)
+    // Audio destination: sounddev=hdmi|headphones in cmdline.txt
+    // If not specified, auto-detect: Pi 4/400 → HDMI, Pi 2/3 → headphones
     const char *pSoundDevice = m_Options.GetSoundDevice();
-    bool bHDMI = (strcmp(pSoundDevice, "sndhdmi") == 0 || strcmp(pSoundDevice, "hdmi") == 0);
+    if (strcmp(pSoundDevice, "sndhdmi") == 0 || strcmp(pSoundDevice, "hdmi") == 0)
+        m_bHDMI = true;
+    else if (strcmp(pSoundDevice, "headphones") == 0 || strcmp(pSoundDevice, "sndpwm") == 0)
+        m_bHDMI = false;
+    else
+        m_bHDMI = (RASPPI >= 4);  // auto: Pi 4/400 → HDMI, Pi 2/3 → headphones
 
-    m_Logger.Write(FromKernel, LogNotice, "Sound: VCHIQ %s", bHDMI ? "HDMI" : "headphones");
+    m_Logger.Write(FromKernel, LogNotice, "Sound: VCHIQ %s", m_bHDMI ? "HDMI" : "headphones");
 
     if (bOK && m_VCHIQ.Initialize())
         m_pSound = nullptr;  // VCHIQSound created in Run() where scheduler is active
@@ -181,8 +185,6 @@ TShutdownMode CKernel::Run()
     asm volatile("dmb" ::: "memory");
 
     // VCHIQ audio: create in main loop where scheduler is active
-    const char *pSD = m_Options.GetSoundDevice();
-    bool bHDMI = (strcmp(pSD, "sndhdmi") == 0 || strcmp(pSD, "hdmi") == 0);
     bool bAudioStarted = false;
 
     while (true)
@@ -192,7 +194,7 @@ TShutdownMode CKernel::Run()
 
         if (!bAudioStarted)
         {
-            TVCHIQSoundDestination dest = bHDMI
+            TVCHIQSoundDestination dest = m_bHDMI
                 ? VCHIQSoundDestinationHDMI
                 : VCHIQSoundDestinationHeadphones;
             auto *pVCHIQ = new VCHIQSound(&m_VCHIQ, SAMPLE_RATE, 1024, dest);

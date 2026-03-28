@@ -86,7 +86,8 @@ do_clean() {
     # Limpiar libs Circle
     for dir in circle/lib circle/lib/usb circle/lib/input circle/lib/sound \
                  circle/lib/sched circle/lib/fs \
-                 circle/addon/fatfs circle/addon/SDCard; do
+                 circle/addon/fatfs circle/addon/SDCard \
+                 circle/addon/linux circle/addon/vc4/vchiq circle/addon/vc4/sound; do
         make -C "$dir" clean 2>/dev/null || true
     done
     # Limpiar directorios cmake
@@ -141,9 +142,16 @@ build_platform() {
 
     # Paso 3: Compilar libs Circle + enlazar kernel
     info "Paso 3/3: Compilando libs Circle y enlazando $KERNEL..."
-    # Use -j1 for first build to avoid race between cmake and link
+    # Clean local .o files to avoid cross-platform contamination
+    rm -f simcoupe/*.o 2>/dev/null
+    # First make may fail if .o files were just cleaned — retry
     make -C simcoupe RASPPI="$RASPPI" -j1 2>&1 | \
         grep -E "CLEAN|CPP|CC|AR|LD|COPY|WC|error:|warning:|CMAKE" || true
+    # Retry if link failed due to missing .o
+    if [ ! -f "simcoupe/$KERNEL" ]; then
+        make -C simcoupe RASPPI="$RASPPI" -j1 2>&1 | \
+            grep -E "CPP|CC|AR|LD|COPY|WC|error:|warning:" || true
+    fi
 
     # Verificar resultado
     if [ -f "simcoupe/$KERNEL" ]; then
@@ -161,9 +169,10 @@ copy_to_sdcard() {
     # Busca volúmenes FAT montados que tengan bootcode.bin (típico de RPi)
     for vol in /Volumes/*/; do
         if [ -f "${vol}bootcode.bin" ] || [ -f "${vol}BOOTCODE.BIN" ]; then
-            info "SD card detectada en $vol — copiando kernel, config.txt y firmware..."
+            info "SD card detectada en $vol — copiando kernel, config.txt, cmdline.txt y firmware..."
             cp -f "simcoupe/$KERNEL" "$vol"
             cp -f "simcoupe/sdcard/config.txt" "$vol"
+            cp -f "simcoupe/sdcard/cmdline.txt" "$vol"
 
             # Copiar firmware apropiado según la plataforma
             if [ "$RASPPI" = "4" ]; then
@@ -187,6 +196,7 @@ copy_to_sdcard() {
     warn "No se detectó SD card montada. Copia manualmente:"
     echo "   cp simcoupe/$KERNEL /Volumes/<tu-sd>/"
     echo "   cp simcoupe/sdcard/config.txt /Volumes/<tu-sd>/"
+    echo "   cp simcoupe/sdcard/cmdline.txt /Volumes/<tu-sd>/"
     if [ "$RASPPI" = "4" ]; then
         echo "   cp circle/boot/start4.elf /Volumes/<tu-sd>/"
         echo "   cp circle/boot/fixup4.dat /Volumes/<tu-sd>/"
@@ -238,6 +248,7 @@ do_release() {
     
     # ---- Config (in root) ----
     cp -f simcoupe/sdcard/config.txt "$RELEASE_DIR/"
+    cp -f simcoupe/sdcard/cmdline.txt "$RELEASE_DIR/"
     
     # ---- SimCoupe assets (simcoupe/ folder) ----
     cp -f simcoupe/Resource/* "$RELEASE_DIR/simcoupe/"

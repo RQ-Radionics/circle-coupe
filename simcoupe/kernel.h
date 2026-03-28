@@ -55,4 +55,5 @@ private:
     CUSBGamePadDevice  *m_pGamePad[MAX_GAMEPADS];
 
     volatile bool       m_bLaunch;
+    bool                m_bHDMI = false;
 };
