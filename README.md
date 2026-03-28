@@ -12,45 +12,43 @@ This port is based on [SimCoupe by Simon Owen](https://github.com/simonowen/simc
 
 - **Bare-metal execution** — No Linux required; runs directly on Raspberry Pi hardware
 - **Multicore architecture**:
-  - Core 0: USB host, scheduler, input handling
-  - Core 1: Z80 CPU emulation and video
-  - Core 2: Audio synthesis
-- **USB input support** — Keyboards and gamepads (up to 2)
-- **Dual audio output** — PWM via headphone jack + HDMI (when available)
+  - Core 0: USB host, scheduler, input handling, VCHIQ audio transport
+  - Core 1: Z80 CPU emulation and video rendering
+  - Core 2: Audio synthesis (SAA1099, SID, DAC)
+- **USB input** — Keyboard, mouse and gamepads (up to 2)
+- **VCHIQ audio** — HDMI or headphone jack output via GPU audio service
 - **FAT filesystem** — Load ROMs and disk images from SD card
-- **Framebuffer video** — Direct hardware rendering at 800×600
-
-## Audio System
-
-SimCoupe Circle features automatic dual audio output:
-
-### Primary Output (PWM)
-- **Device**: `CPWMSoundBaseDevice` via Circle framework
-- **Output**: 3.5mm headphone jack
-- **Sample Rate**: 22.05kHz (44.1kHz for non-Circle builds)
-- **Purpose**: Primary audio device, maintains core synchronization
-
-### Secondary Output (HDMI)
-- **Device**: `CHDMISoundBaseDevice` (automatic detection)
-- **Output**: HDMI audio (when monitor supports it)
-- **Sample Rate**: 48kHz
-- **Purpose**: Additional audio output, no configuration required
-
-### Implementation Details
-- **Automatic Detection**: HDMI audio initializes automatically if available
-- **Simultaneous Output**: Same audio data sent to both devices
-- **Fallback**: PWM-only operation if HDMI fails or unavailable
-- **Synchronization**: PWM remains primary device for timing control
-- **Buffer Size**: 1000ms queue for smooth playback
+- **Framebuffer video** — 800x600, 8-bit palette (Pi 2/3) or 32-bit ARGB (Pi 4/400)
 
 ## Supported Hardware
 
-| Raspberry Pi | Kernel File        | CPU Optimization |
-|--------------|--------------------|------------------|
-| Pi 2B        | `kernel7.img`      | Cortex-A7        |
-| Pi 3B        | `kernel8-32.img`   | Cortex-A53       |
-| Pi 4B        | `kernel7l.img`     | Cortex-A72       |
-| Pi 400       | `kernel7l.img`     | Cortex-A72       |
+| Raspberry Pi | Kernel File      | CPU          | Audio Default | Video         |
+|--------------|------------------|--------------|---------------|---------------|
+| Pi 2B        | `kernel7.img`    | Cortex-A7    | Headphones    | 8-bit palette |
+| Pi 3B        | `kernel8-32.img` | Cortex-A53   | Headphones    | 8-bit palette |
+| Pi 4B        | `kernel7l.img`   | Cortex-A72   | HDMI          | 32-bit ARGB   |
+| Pi 400       | `kernel7l.img`   | Cortex-A72   | HDMI          | 32-bit ARGB   |
+
+**Pi 400 notes**: Must use HDMI0 port (closest to USB-C power). No headphone jack.
+
+## Audio System
+
+All audio goes through VCHIQ (VideoCore Host Interface Queue), routed to HDMI or headphone jack:
+
+- **Sample rate**: 44100 Hz stereo (matching upstream SimCoupe)
+- **Auto-detection**: Pi 4/400 defaults to HDMI, Pi 2/3 to headphones
+- **Override**: Set `sounddev=hdmi` or `sounddev=headphones` in `cmdline.txt`
+- **Ring buffer**: Core 2 generates audio, Core 0 transports to GPU via VCHIQ
+- **Flow control**: GPU callback reports buffered bytes, poll rate-limited
+
+### Audio Pipeline
+
+```
+Core 2 (emulator)         Ring Buffer          Core 0 (poll)           GPU
+  Sound::FrameUpdate() --> s_ring[] ---------> circle_audio_poll() --> VCHIQ --> speaker
+  SAA1099 + DAC + SID      ~1s stereo          1 frame per poll        HDMI/jack
+  44100 Hz stereo           176K s16            via WriteSamples()
+```
 
 ## Requirements
 
@@ -58,7 +56,6 @@ SimCoupe Circle features automatic dual audio output:
 - **Build tools**: CMake 3.16+, GNU Make
 - **SD Card**: FAT32 formatted, 512MB+ recommended
 - **SAM Coupé ROM**: `samcoupe.rom` (not included)
-- **Raspberry Pi Firmware**: Automatically downloaded during build
 
 ### Installing the toolchain
 
@@ -76,238 +73,114 @@ sudo apt install gcc-arm-none-eabi cmake make
 ## Building
 
 ```bash
-# Build for Raspberry Pi 3B (default)
-./build.sh
+# Build for a specific platform
+./build.sh pi2      # Raspberry Pi 2B
+./build.sh pi3      # Raspberry Pi 3B (default)
+./build.sh pi4      # Raspberry Pi 4B / 400
 
-# Build for Raspberry Pi 2B
-./build.sh pi2
-
-# Build for Raspberry Pi 4B
-./build.sh pi4
-
-# Build for Raspberry Pi 400
-./build.sh p400
-
-# Build all supported versions
+# Build all platforms
 ./build.sh all
 
-# Clean all build artifacts
+# Create release ZIP
+./build.sh release
+
+# Clean everything
 ./build.sh clean
 ```
 
 ## SD Card Setup
 
-Copy the following files to your FAT32 SD card:
+Copy the following files to a FAT32 SD card:
 
 ```
-sdcard/
-├── bootcode.bin      # RPi bootloader (Pi 2B/3B only, from circle/boot/)
-├── start.elf         # RPi firmware (Pi 2B/3B, from circle/boot/)
-├── start4.elf        # RPi firmware (Pi 4B/400, from circle/boot/)
-├── fixup.dat         # RPi firmware (Pi 2B/3B, from circle/boot/)
-├── fixup4.dat        # RPi firmware (Pi 4B/400, from circle/boot/)
-├── armstub7-rpi4.bin # ARM stub (Pi 4B/400 only, from circle/boot/)
-├── bcm2711-rpi-4-b.dtb    # Device tree (Pi 4B, from circle/boot/)
-├── bcm2711-rpi-400.dtb    # Device tree (Pi 400, from circle/boot/)
-├── config.txt        # Boot configuration
-├── kernel.img        # Use appropriate kernel for your Pi model:
-│                     #   kernel7.img for Pi 2B
-│                     #   kernel8-32.img for Pi 3B
-│                     #   kernel7l.img for Pi 4B/400
+/
+├── bootcode.bin           # RPi bootloader (Pi 2B/3B)
+├── start.elf              # GPU firmware (Pi 2B/3B)
+├── start4.elf             # GPU firmware (Pi 4B/400)
+├── fixup.dat              # Memory fixup (Pi 2B/3B)
+├── fixup4.dat             # Memory fixup (Pi 4B/400)
+├── armstub7-rpi4.bin      # ARM stub (Pi 4B/400)
+├── bcm2711-rpi-4-b.dtb    # Device tree (Pi 4B)
+├── bcm2711-rpi-400.dtb    # Device tree (Pi 400)
+├── config.txt             # Boot configuration
+├── cmdline.txt            # Kernel parameters (optional)
+├── kernel7.img            # Kernel Pi 2B
+├── kernel8-32.img         # Kernel Pi 3B
+├── kernel7l.img           # Kernel Pi 4B/400
 └── simcoupe/
-    ├── samcoupe.rom     # SAM Coupé ROM (required)
-    ├── samdos2.sbt      # SAM DOS 2.2 system disk (recommended)
-    ├── atom.rom         # Atom ROM (optional)
-    ├── atomlite.rom     # Atom Lite ROM (optional)
-    ├── sp0256-al2.bin   # SP0256-AL2 speech synthesizer (optional)
-    └── *.dsk            # Additional disk images (optional)
+    ├── samcoupe.rom       # SAM Coupé ROM (required)
+    └── *.dsk              # Disk images (optional)
 ```
 
-### Generating Firmware Files
+The Pi firmware auto-selects the correct kernel based on the board.
 
-The build script automatically downloads and verifies firmware files. If needed manually:
+### config.txt
 
-```bash
-# Download Raspberry Pi firmware
-make -C circle/boot
+The included `config.txt` supports all Pi models with conditional sections:
 
-# Build ARM stub for Pi 4 FIQ support
-make -C circle/boot armstub
+```ini
+arm_64bit=0
+initial_turbo=0
+dtparam=audio=on
+
+[pi4]
+kernel=kernel7l.img
+armstub=armstub7-rpi4.bin
+max_framebuffers=2
 ```
 
-### Optional ROMs and Resources
+### cmdline.txt
 
-The `simcoupe/Resource/` directory contains additional files that can be copied to your SD card:
+Optional kernel parameters:
 
-- **`samdos2.sbt`** - SAM DOS 2.2 system disk. Provides disk operating system functionality
-- **`atom.rom`** - Atom hard disk interface ROM for IDE hard disk emulation
-- **`atomlite.rom`** - Atom Lite ROM for simplified Atom compatibility
-- **`sp0256-al2.bin`** - SP0256-AL2 speech synthesizer ROM for voice synthesis
+```
+sounddev=hdmi          # Force HDMI audio (auto-detected on Pi 4/400)
+sounddev=headphones    # Force headphone jack (auto-detected on Pi 2/3)
+```
 
-These files are automatically detected and loaded if present in the `simcoupe/` directory on the SD card.
+If `cmdline.txt` is empty or absent, audio destination is auto-detected.
 
 ## Controls
 
-| Key            | SAM Coupé     |
-|----------------|---------------|
-| USB Keyboard   | SAM Keyboard  |
-| USB Gamepad    | Joystick 1/2  |
+| Input          | Function                     |
+|----------------|------------------------------|
+| USB Keyboard   | SAM Coupé keyboard           |
+| USB Mouse      | SAM Coupé mouse              |
+| USB Gamepad    | Joystick 1/2                 |
+| F1             | Insert disk                  |
+| F10            | Options menu                 |
+| F12            | Reset                        |
+| Shift+F12      | Exit (screen goes black)     |
+| Numpad 9       | Boot from drive 1            |
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    Raspberry Pi                         │
+│                    Raspberry Pi                          │
+├──────────────┬──────────────────┬────────────────────────┤
+│  Core 0      │  Core 1          │  Core 2                │
+│  ──────      │  ──────          │  ──────                │
+│  USB HCI     │  Z80 Emulation   │  Audio Synthesis       │
+│  Scheduler   │  Video Rendering │  SAA1099 + DAC + SID   │
+│  KB/Mouse/GP │  Frame Update    │  Sound::FrameUpdate()  │
+│  VCHIQ Poll  │                  │  Ring Buffer Write     │
+├──────────────┴──────────────────┴────────────────────────┤
+│  Circle Framework + Multicore-safe Linux Compat Layer    │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │
+│  │VCHIQSound│ │CScreenDev│ │CEMMCDev  │ │CUSBHCIDev│   │
+│  │(Audio)   │ │(Pi4 FB)  │ │(SD Card) │ │(USB)     │   │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘   │
 ├─────────────────────────────────────────────────────────┤
-│  Core 0          │  Core 1          │  Core 2           │
-│  ───────         │  ───────         │  ───────          │
-│  USB HCI         │  Z80 Emulation   │  Audio Synthesis  │
-│  Scheduler       │  Video Update    │  Sound::Frame()  │
-│  Keyboard/Gamepad│                  │  Dual Audio Out  │
-├─────────────────────────────────────────────────────────┤
-│                    Circle Framework                      │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐    │
-│  │ CPWMSound│ │CHDMISound│ │CEMMCDev. │ │CUSBHCIDev│    │
-│  │(PWM)     │ │(HDMI)    │ │(SD Card) │ │(USB)      │    │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘    │
-├─────────────────────────────────────────────────────────┤
-│                    Hardware                              │
-│  PWM Audio     │  HDMI Audio    │  SD Card Slot  │  USB │
-│  (Headphone)   │  (Monitor)     │  (FAT32)       │  (KB)│
+│  Hardware: HDMI/Jack Audio │ HDMI Video │ SD Card │ USB │
 └─────────────────────────────────────────────────────────┘
 ```
 
-## Project Structure
+### Key Implementation Details
 
-```
-circle-coupe/
-├── .beads/               # Issue tracking (beads system)
-├── circle/               # Circle framework (submodule)
-│   ├── addon/            # Circle extensions (LVGL, sound, etc.)
-│   ├── include/          # Circle headers
-│   ├── lib/              # Circle libraries
-│   ├── sample/           # Example applications
-│   └── ...
-├── simcoupe/             # SimCoupe source (submodule)
-│   ├── Base/             # Core emulator (CPU, video, sound)
-│   ├── Circle/           # Circle-specific backends
-│   ├── SDL/              # SDL platform layer (adapted)
-│   ├── Win32/            # Windows-specific code (unused)
-│   ├── Extern/           # External libraries (resid, fmt)
-│   ├── Resource/         # ROMs and system resources
-│   └── kernel.cpp        # Circle kernel entry point
-├── src/                  # Support code
-│   ├── video/circle/     # Circle framebuffer driver
-│   ├── fatfs_posix.cpp   # POSIX file I/O via FatFs
-│   └── ...
-├── build/                # Build artifacts (Pi 3B)
-├── build-pi2/            # Build artifacts (Pi 2B)
-├── build-pi4/            # Build artifacts (Pi 4B/400)
-├── scripts/              # Build and utility scripts
-├── SDL3/                 # SDL3 library (subset used)
-├── cmake/                # CMake toolchain files
-├── build.sh              # Main build script
-├── circle-config.mk      # Circle configuration
-└── README.md             # This file
-```
-
-## Configuration Options
-
-The `circle-config.mk` file controls build settings:
-
-| Option              | Value       | Purpose                           |
-|---------------------|-------------|-----------------------------------|
-| `AARCH`             | 32          | 32-bit ARM (AArch32)              |
-| `RASPPI`            | 2, 3, or 4  | Target Pi version                 |
-| `KERNEL_MAX_SIZE`   | 0x800000    | 8MB kernel size limit             |
-| `ARM_ALLOW_MULTI_CORE` | (defined) | Enable multicore support       |
-
-## Technical Details
-
-### Memory Model
-
-- Kernel runs at 8MB limit (configurable in `kernel_max_size`)
-- Framebuffer depth: 32-bit XRGB8888
-- Sound buffer: 1024 samples @ 44.1kHz (~23ms latency)
-
-### Audio Implementation
-
-```cpp
-// Dual audio device initialization (Circle/Audio.cpp)
-static CPWMSoundBaseDevice *s_pSound = nullptr;      // Primary PWM
-static CHDMISoundBaseDevice *s_pSoundHDMI = nullptr; // Secondary HDMI
-
-// Automatic HDMI detection and initialization
-s_pSoundHDMI = new CHDMISoundBaseDevice(s_pInterrupt, SAMPLE_FREQ, 2048);
-if (s_pSoundHDMI && s_pSoundHDMI->AllocateQueue(1000)) {
-    // HDMI available - dual output enabled
-    g_audio_status = "dual-running";
-}
-
-// Simultaneous audio output
-Audio::AddData(pData, len_bytes); // Sends to both devices
-```
-
-### Multicore Synchronization
-
-```cpp
-// Core 1 signals Core 2 when audio frame is ready
-volatile bool g_sound_frame_pending;
-volatile bool g_sound_frame_done;
-```
-
-Memory barriers (`dmb`) ensure proper synchronization between cores.
-
-### Circle Integration
-
-The `CKernel` class inherits from `CMultiCoreSupport`:
-
-```cpp
-class CKernel : public CMultiCoreSupport {
-    CUSBHCIDevice  m_USBHCI;          // USB host controller
-    CEMMCDevice    m_EMMC;            // SD card interface
-    CPWMSoundBaseDevice m_PWMSound;   // PWM audio output (primary)
-    CHDMISoundBaseDevice m_HDMISound; // HDMI audio output (secondary)
-    // ...
-};
-```
-
-### Audio Device Management
-
-- **Primary Device (PWM)**: Always available, controls timing/synchronization
-- **Secondary Device (HDMI)**: Auto-detected, optional, mirrors PWM output
-- **Fallback Strategy**: PWM-only operation if HDMI initialization fails
-- **Buffer Synchronization**: Both devices receive identical audio data simultaneously
-
-## Audio Configuration
-
-SimCoupe Circle supports dual audio output, but the firmware must be configured correctly:
-
-### PWM Audio (Default)
-- **Device**: Headphone jack (3.5mm)
-- **Configuration**: `sounddev=sndpwm` (default for all Pi models)
-- **Models**: Pi 2B, 3B, 4B (Pi 400 lacks physical jack)
-- **Reliability**: Works on all Raspberry Pi models with audio jack
-
-### HDMI Audio
-- **Device**: HDMI output (requires audio-capable monitor)
-- **Configuration**: `sounddev=sndhdmi` in respective `[pi*]` section
-- **Models**: All Pi models (Pi 2B/3B/4B/400)
-- **Requirements**: HDMI monitor with audio support
-
-### Configuration in config.txt
-
-Modify `simcoupe/sdcard/config.txt` in the appropriate section:
-
-```ini
-[pi2]  # or [pi3], [pi4]
-# Audio configuration - PWM works on all setups, HDMI requires compatible monitor
-# sounddev=sndpwm          # PWM audio (headphone jack) - default, always works
-# sounddev=sndhdmi         # HDMI audio (requires HDMI monitor with audio support)
-sounddev=sndpwm
-```
-
-**Note**: Raspberry Pi 400 lacks a physical 3.5mm audio jack, so only HDMI audio is available for this model.
+- **Video**: Pi 2/3 use `CBcmFrameBuffer` (8-bit palette, GPU converts). Pi 4/400 use `CScreenDevice` (32-bit ARGB, software palette LUT) because VCHIQ init disrupts raw framebuffers on BCM2711
+- **Audio**: Push-based VCHIQ (adapted from BMC64). Ring buffer decouples emulator (Core 2) from VCHIQ transport (Core 0). Re-START mechanism recovers from GPU pipeline drain
+- **Multicore locks**: `linux_multicore_fix.cpp` provides atomic rwlock, mutex, semaphore and completion overrides for Circle's Linux compat layer (originals assert Core 0 only)
 
 ## Credits
 
@@ -316,20 +189,13 @@ sounddev=sndpwm
 - Allan Skillman — Original SimCoupe 0.72
 - Dave Laundon — CPU contention and sound enhancements
 - Dave Hooper — Phillips SAA 1099 chip emulator
-- Ivan Kosarev — Z80 CPU core
-- Dag Lem — MOS 6581/8580 SID emulator
 
 ### Circle Framework
 - **Rene Stange** — Circle bare-metal C++ environment (https://github.com/rsta2/circle)
 
+### Circle Bare-Metal Port
+- **RQ Radionics & Rodolfo Guerra**
+
 ## License
 
 This project is licensed under the GNU General Public License v2.0. See `simcoupe/License.txt` for details.
-
-## Contact
-
-For the original SimCoupe: Simon Owen — https://simonowen.com
-
-For Circle: Rene Stange — See Circle README
-
-For this bare-metal port: See project repository issues.
