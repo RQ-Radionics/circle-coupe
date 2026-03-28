@@ -65,6 +65,12 @@ AboutDialog::AboutDialog(Window* pParent_/*=nullptr*/)
     new TextControl(this, 41, y, "Phillips SAA 1099 sound chip emulation:", BLUE_5);
     new TextControl(this, 51, y + 13, "Dave Hooper", BLACK); y += 32;
 
+#ifdef __circle__
+    new TextControl(this, 41, y, "Circle bare-metal port:", BLUE_5);
+    new TextControl(this, 51, y + 13, "RQ Radionics & Rodolfo Guerra", BLACK); y += 32;
+    m_nHeight += 32;
+#endif
+
     new TextControl(this, 41, y + 3, "See README for additional information", RED_3);
 
     m_pCloseButton = new TextButton(this, (m_nWidth - 55) / 2, m_nHeight - 21, "Close", 55);
