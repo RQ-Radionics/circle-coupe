@@ -156,11 +156,26 @@ If `cmdline.txt` is empty or absent, audio destination is auto-detected.
 | Key            | Function                     |
 |----------------|------------------------------|
 | F1             | Insert disk (drive 1)        |
+| Shift+F1       | Eject disk (drive 1)         |
+| Alt+F1         | New disk (drive 1)           |
 | F2             | Insert disk (drive 2)        |
+| Shift+F2       | Eject disk (drive 2)         |
+| Alt+F2         | New disk (drive 2)           |
+| F3             | Tape browser                 |
+| Shift+F3       | Eject tape                   |
+| F4             | Import data                  |
+| Shift+F4       | Export data                  |
+| Alt+F4         | Exit (halt)                  |
+| F5             | Toggle TV aspect ratio       |
+| F6             | Toggle smoothing             |
+| Shift+F6       | Toggle motion blur           |
+| F8             | Toggle fullscreen            |
 | F9             | Debugger                     |
+| Shift+F9       | Save screenshot (PNG)        |
 | F10            | Options menu                 |
+| F11            | NMI                          |
 | F12            | Reset                        |
-| Shift+F12      | Exit (screen goes black)     |
+| Ctrl+F12       | Exit (halt)                  |
 | Numpad 9       | Boot from drive 1            |
 
 ## Architecture
