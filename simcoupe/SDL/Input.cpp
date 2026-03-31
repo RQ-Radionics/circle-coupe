@@ -833,7 +833,8 @@ static int HKFromUsbHid(unsigned hid)
 }
 
 extern "C" void circle_simcoupe_key(unsigned hid_scancode, int pressed,
-                                     int mod_shift, int mod_ctrl, int mod_alt)
+                                     int mod_shift, int mod_ctrl, int mod_alt,
+                                     unsigned char raw_mod)
 {
 
     int nKey = HKFromUsbHid(hid_scancode);

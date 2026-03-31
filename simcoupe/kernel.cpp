@@ -13,6 +13,7 @@
 #include <circle/usb/usbkeyboard.h>
 #include <circle/input/mouse.h>
 #include <circle/screen.h>
+#include <circle/startup.h>
 #include "Circle/VCHIQSound.h"
 #include <circle/util.h>
 #include <string.h>
@@ -42,7 +43,8 @@ namespace CPU  { void Run(); void Exit(); }
 namespace Sound { void FrameUpdate(); }
 
 extern "C" void circle_simcoupe_key(unsigned hid_scancode, int pressed,
-                                     int mod_shift, int mod_ctrl, int mod_alt);
+                                     int mod_shift, int mod_ctrl, int mod_alt,
+                                     unsigned char raw_mod);
 extern "C" void circle_mouse_event(unsigned buttons, int dx, int dy);
 
 // Gamepad event callback (defined in Circle/Input.cpp)
@@ -62,6 +64,7 @@ volatile bool g_sound_frame_pending = false;
 volatile bool g_sound_frame_done    = true;
 volatile unsigned g_sound_signal_count = 0;
 volatile unsigned g_core2_exec_count = 0;
+volatile bool g_reboot_requested = false;
 
 // ---- USB keyboard handler ----
 static unsigned char s_prev_mod = 0;
@@ -81,11 +84,26 @@ static void KeyStatusHandlerRaw(unsigned char ucMod,
     int mc = (ucMod & ((1<<0)|(1<<4))) ? 1 : 0;
     int ma = (ucMod & ((1<<2)|(1<<6))) ? 1 : 0;
 
+    // CTRL-ALT-DELETE: reboot the Raspberry Pi
+    if (mc && ma)
+    {
+        for (int c = 0; c < 6; c++)
+        {
+            if (Keys[c] == 0x4C)  // HID scancode for DELETE
+            {
+                void *fb = circle_fb_get_buffer();
+                if (fb)
+                    memset(fb, 0, circle_fb_get_pitch() * circle_fb_get_height());
+                reboot();
+            }
+        }
+    }
+
     unsigned char changed = s_prev_mod ^ ucMod;
     for (int i = 0; s_mod_map[i].mask; i++)
         if (changed & s_mod_map[i].mask)
             circle_simcoupe_key(s_mod_map[i].scancode,
-                                (ucMod & s_mod_map[i].mask) ? 1 : 0, 0, 0, 0);
+                                (ucMod & s_mod_map[i].mask) ? 1 : 0, 0, 0, 0, 0);
     s_prev_mod = ucMod;
 
     for (int p = 0; p < 6; p++) {
@@ -93,14 +111,14 @@ static void KeyStatusHandlerRaw(unsigned char ucMod,
         if (!k) continue;
         bool found = false;
         for (int c = 0; c < 6; c++) if (Keys[c] == k) { found = true; break; }
-        if (!found && k >= 4 && k < 232) circle_simcoupe_key(k, 0, ms, mc, ma);
+        if (!found && k >= 4 && k < 232) circle_simcoupe_key(k, 0, ms, mc, ma, ucMod);
     }
     for (int c = 0; c < 6; c++) {
         unsigned char k = Keys[c];
         if (!k) continue;
         bool found = false;
         for (int p = 0; p < 6; p++) if (s_prev_keys[p] == k) { found = true; break; }
-        if (!found && k >= 4 && k < 232) circle_simcoupe_key(k, 1, ms, mc, ma);
+        if (!found && k >= 4 && k < 232) circle_simcoupe_key(k, 1, ms, mc, ma, ucMod);
     }
     memcpy(s_prev_keys, Keys, 6);
 }
@@ -191,6 +209,13 @@ TShutdownMode CKernel::Run()
     {
         m_Scheduler.Yield();
         circle_audio_poll();  // drain Core 2 audio ring → VCHIQ on Core 0
+
+        // Check if Core 1 requested reboot (Shift+F12)
+        if (g_reboot_requested)
+        {
+            m_Timer.MsDelay(500);  // let screen clear
+            reboot();
+        }
 
         if (!bAudioStarted)
         {
@@ -337,12 +362,17 @@ void CKernel::Run(unsigned nCore)
         if (Main::Init(1, argv))
             CPU::Run();
 
-        Main::Exit();
-
-        // Clear screen to black on exit
+        // Clear screen to black before exiting video subsystem
         void *fb = circle_fb_get_buffer();
         if (fb)
             memset(fb, 0, circle_fb_get_pitch() * circle_fb_get_height());
+
+        Main::Exit();
+
+        // Request reboot on core 0
+        asm volatile("dmb" ::: "memory");
+        g_reboot_requested = true;
+        asm volatile("dmb" ::: "memory");
 
         while (true) asm volatile("wfe");
     }

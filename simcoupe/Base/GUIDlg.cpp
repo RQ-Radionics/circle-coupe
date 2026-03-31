@@ -708,7 +708,7 @@ class InputOptions final : public Dialog
 {
 public:
     InputOptions(Window* pParent_)
-        : Dialog(pParent_, 300, 260, "Input Settings")
+        : Dialog(pParent_, 300, 300, "Input Settings")
     {
         new IconControl(this, 10, 10, &sKeyboardIcon);
         new FrameControl(this, 50, 17, 238, 89);
@@ -724,15 +724,15 @@ public:
         m_pAltGrForEdit = new CheckBox(this, 63, 85, "Use Alt-Gr key for SAM Edit");
 #endif
 
-        new IconControl(this, 10, 121, &sJoystickIcon);
-        new FrameControl(this, 50, 123, 238, 55);
-        new TextControl(this, 60, 119, "Joystick", YELLOW_8, BLUE_2);
+        new IconControl(this, 10, 146, &sJoystickIcon);
+        new FrameControl(this, 50, 148, 238, 68);
+        new TextControl(this, 60, 144, "Joystick", YELLOW_8, BLUE_2);
 
-        new TextControl(this, 63, 144, "Joystick 1:");
-        m_pJoyType1 = new ComboBox(this, 145, 141, "None|Sinclair 1|Sinclair 2|Kempston",115);
+        new TextControl(this, 63, 172, "Joystick 1:");
+        m_pJoyType1 = new ComboBox(this, 145, 169, "None|Sinclair 1|Sinclair 2|Kempston",115);
 
-        new TextControl(this, 63, 166, "Joystick 2:");
-        m_pJoyType2 = new ComboBox(this, 145, 163, "None|Sinclair 1|Sinclair 2|Kempston", 115);
+        new TextControl(this, 63, 198, "Joystick 2:");
+        m_pJoyType2 = new ComboBox(this, 145, 195, "None|Sinclair 1|Sinclair 2|Kempston", 115);
 
         m_pOK = new TextButton(this, m_nWidth - 117, m_nHeight - 21, "OK", 50);
         m_pCancel = new TextButton(this, m_nWidth - 62, m_nHeight - 21, "Cancel", 50);

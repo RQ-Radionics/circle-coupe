@@ -26,12 +26,16 @@
 #include "Options.h"
 #include "UI.h"
 
+#include <circle/input/keyboardbehaviour.h>
+#include <circle/input/keymap.h>
+
 // ---- Ring buffer for USB key events (IRQ-safe: one writer, one reader) ---
 
 struct KeyEvent {
     unsigned scancode;
     int      pressed;
     int      mod_shift, mod_ctrl, mod_alt;
+    unsigned char raw_mod;
 };
 
 static constexpr int KBD_RING = 64;
@@ -77,9 +81,26 @@ static volatile int s_gpad_tail = 0;
 // ---- Gamepad axis deadzone (0-32767 range, 15% = ~5000) ----
 static constexpr int GAMEPAD_DEADZONE = 5000;
 
+// ---- Circle keymap for layout-aware character translation ----
+static CKeyMap *s_pKeyMap = nullptr;
+
+// USB HID modifier byte → Circle KEY_*_MASK
+static u8 UsbModToCircleMod(unsigned char raw_mod)
+{
+    u8 mod = 0;
+    if (raw_mod & (1<<0)) mod |= KEY_LCTRL_MASK;
+    if (raw_mod & (1<<1)) mod |= KEY_LSHIFT_MASK;
+    if (raw_mod & (1<<2)) mod |= KEY_ALT_MASK;
+    if (raw_mod & (1<<4)) mod |= KEY_RCTRL_MASK;
+    if (raw_mod & (1<<5)) mod |= KEY_RSHIFT_MASK;
+    if (raw_mod & (1<<6)) mod |= KEY_ALTGR_MASK;
+    return mod;
+}
+
 // Called from kernel.cpp USB IRQ handler (core 0)
 extern "C" void circle_simcoupe_key(unsigned hid_scancode, int pressed,
-                                     int mod_shift, int mod_ctrl, int mod_alt)
+                                     int mod_shift, int mod_ctrl, int mod_alt,
+                                     unsigned char raw_mod)
 {
     int next = (s_ring_head + 1) % KBD_RING;
     if (next == s_ring_tail) return;  // overflow: drop
@@ -89,6 +110,7 @@ extern "C" void circle_simcoupe_key(unsigned hid_scancode, int pressed,
     s_ring[s_ring_head].mod_shift = mod_shift;
     s_ring[s_ring_head].mod_ctrl  = mod_ctrl;
     s_ring[s_ring_head].mod_alt   = mod_alt;
+    s_ring[s_ring_head].raw_mod   = raw_mod;
     asm volatile("dmb" ::: "memory");
     s_ring_head = next;
 }
@@ -205,6 +227,7 @@ bool Input::Init()
 {
     s_ring_head = s_ring_tail = 0;
     s_gpad_head = s_gpad_tail = 0;
+    s_pKeyMap = new CKeyMap();
     Keyboard::Init();
     Joystick::Init();
     return true;
@@ -227,6 +250,7 @@ void Input::Update()
         ev.mod_shift = s_ring[s_ring_tail].mod_shift;
         ev.mod_ctrl  = s_ring[s_ring_tail].mod_ctrl;
         ev.mod_alt   = s_ring[s_ring_tail].mod_alt;
+        ev.raw_mod   = s_ring[s_ring_tail].raw_mod;
         asm volatile("dmb" ::: "memory");
         s_ring_tail = (s_ring_tail + 1) % KBD_RING;
 
@@ -238,6 +262,18 @@ void Input::Update()
                    (ev.mod_ctrl  ? HM_LCTRL  : 0) |
                    (ev.mod_alt   ? HM_LALT   : 0);
 
+        // Translate HID scancode to character using Circle's keymap,
+        // so SAM key tables can learn which host key produces each symbol.
+        int nChar = 0;
+        if (pressed && s_pKeyMap)
+        {
+            u8 circle_mods = UsbModToCircleMod(ev.raw_mod);
+            u16 translated = s_pKeyMap->Translate(
+                static_cast<u8>(ev.scancode), circle_mods);
+            if (translated > 0 && translated < KeySpace)
+                nChar = translated;
+        }
+
         // GUI gets key events directly
         if (GUI::IsActive())
         {
@@ -246,7 +282,7 @@ void Input::Update()
             continue;
         }
 
-        Keyboard::SetKey(hk, pressed, mods, 0);
+        Keyboard::SetKey(hk, pressed, mods, nChar);
 
         // F-key actions
         if (hk >= HK_F1 && hk <= HK_F12)
